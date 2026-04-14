@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Padrón</div>
+    <h2>Socios</h2>
+    <p class="module-subtitle">Consulta el padrón de socios y, como administrador, registra, actualiza o elimina socios con sus datos principales.</p>
+  </div>
+</div>
+
+<div class="card section">
+  <form class="search" method="get">
+    <input type="text" name="q" placeholder="Busca por número, nombre o DNI del socio" value="{{ q }}">
+    <button class="btn">Buscar</button>
+  </form>
+</div>
+
+{% if current_role == 'Administrador' %}
+<div class="card section">
+  <h3>{% if edit_socio %}Editar socio{% else %}Crear socio{% endif %}</h3>
+  <p class="small-note">La foto se sube desde la app. Si luego sincronizas desde Excel, el DNI y la foto se conservarán.</p>
+  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+    <input type="hidden" name="action" value="{% if edit_socio %}update{% else %}create{% endif %}">
+    <div><label>Número</label><input type="text" name="numero" value="{{ edit_socio.numero if edit_socio else '' }}" placeholder="Ejemplo: 31" required></div>
+    <div><label>Apellidos y nombres</label><input type="text" name="nombre" value="{{ edit_socio.nombre if edit_socio else '' }}" placeholder="Escribe el nombre completo" required></div>
+    <div><label>DNI</label><input type="text" name="dni" value="{{ edit_socio.dni if edit_socio else '' }}" placeholder="Escribe el DNI"></div>
+    <div>
+      <label>Foto</label>
+      <input type="file" name="foto_archivo" accept=".jpg,.jpeg,.png,.webp">
+      {% if edit_socio and edit_socio.foto_url %}
+      <div class="small-note" style="margin-top:8px">Foto actual</div>
+      <img src="{{ edit_socio.foto_url }}" alt="Foto actual de {{ edit_socio.nombre }}" style="width:64px;height:64px;object-fit:cover;border-radius:50%;border:1px solid #d7e1ef;margin-top:6px">
+      {% endif %}
+    </div>
+    <div><label>Cuotas</label><input type="text" name="meses" value="{{ edit_socio.meses if edit_socio else '' }}" placeholder="Número de cuotas"></div>
+    <div><label>Fecha de préstamo</label><input type="text" name="fecha_prestamo" value="{{ edit_socio.fecha_prestamo if edit_socio else '' }}" placeholder="YYYY-MM-DD"></div>
+    <div><label>Saldo base</label><input type="text" name="saldo" value="{{ edit_socio.saldo if edit_socio else '' }}" placeholder="Monto de saldo"></div>
+    <div><label>Mes/2026</label><input type="text" name="mes_2026" value="{{ edit_socio.mes_2026 if edit_socio else '' }}" placeholder="Mes visible del control"></div>
+    <div style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn" type="submit">{% if edit_socio %}Guardar cambios{% else %}Crear socio{% endif %}</button>
+      {% if edit_socio %}
+      <a class="btn secondary" href="{{ url_for('main.socios', q=q) }}">Cancelar edición</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>N°</th>
+        <th>Foto</th>
+        <th>Apellidos y nombres</th>
+        <th>DNI</th>
+        <th>Cuotas</th>
+        <th>Fecha préstamo</th>
+        <th>Saldo actual</th>
+        <th>Mes/2026</th>
+        <th>Acción</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in socios %}
+      <tr>
+        <td>{{ s.numero }}</td>
+        <td>
+          {% if s.foto_url %}
+          <img src="{{ s.foto_url }}" alt="Foto de {{ s.nombre }}" style="width:42px;height:42px;object-fit:cover;border-radius:50%;border:1px solid #d7e1ef">
+          {% else %}
+          <span class="small-note">Sin foto</span>
+          {% endif %}
+        </td>
+        <td>{{ s.nombre }}</td>
+        <td>{{ s.dni or '-' }}</td>
+        <td>{{ s.plazo_real or s.plazo_balance or s.meses or '' }}</td>
+        <td>{{ s.fecha_prestamo or '' }}</td>
+        <td>S/ {{ '%.1f'|format(s.saldo_periodo or 0) }}</td>
+        <td>{{ s.mes_2026 or '-' }}</td>
+        <td>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="btn light" href="{{ url_for('main.socio_detalle', numero=s.numero) }}">Abrir estado de cuenta</a>
+            {% if current_role == 'Administrador' %}
+            <a class="btn secondary" href="{{ url_for('main.socios', q=q, edit=s.numero) }}">Editar</a>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="numero" value="{{ s.numero }}">
+              <button class="btn secondary" type="submit" onclick="return confirm('¿Deseas eliminar este socio y sus registros asociados?')">Eliminar</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9">No se encontraron socios con ese criterio.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

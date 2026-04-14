@@ -1,0 +1,96 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<h2>Comparación de cronogramas</h2>
+<div class="search" style="margin-bottom:14px;">
+  <a class="btn" href="{{ url_for('main.socio_detalle', numero=socio.numero) }}">Volver al socio</a>
+<a class="btn secondary" href="{{ url_for('main.historial_prestamo_detalle', numero=socio.numero, historial_id=historial.id) }}">Abrir historial guardado</a>
+</div>
+
+<div class="grid">
+  <div class="card"><h3>Socio</h3><div>{{ socio.numero }} - {{ socio.nombre }}</div></div>
+  <div class="card"><h3>Acción</h3><div class="big">{{ historial.accion }}</div></div>
+  <div class="card"><h3>Monto nuevo</h3><div class="big">{% if historial.monto is not none %}S/ {{ '%.1f'|format(historial.monto) }}{% else %}-{% endif %}</div></div>
+  <div class="card"><h3>Cuotas nuevas</h3><div class="big">{{ historial.cuotas or '-' }}</div></div>
+</div>
+
+<div class="grid section">
+  <div class="card"><h3>Total plazos comparados</h3><div class="big">{{ resumen_comparacion.total_plazos }}</div></div>
+  <div class="card compare-summary summary-ok"><h3>Sin cambio</h3><div class="big">{{ resumen_comparacion.sin_cambio }}</div></div>
+  <div class="card compare-summary summary-warn"><h3>Cambio parcial</h3><div class="big">{{ resumen_comparacion.cambio_parcial }}</div></div>
+  <div class="card compare-summary summary-danger"><h3>Cambio fuerte</h3><div class="big">{{ resumen_comparacion.cambio_fuerte }}</div></div>
+</div>
+
+<div class="section card">
+  <p class="small-note">La izquierda muestra el cronograma anterior guardado en el historial. La derecha muestra el cronograma actual activo del socio.</p>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2">Plazo</th>
+        <th colspan="3">Anterior</th>
+        <th colspan="3">Actual</th>
+      </tr>
+      <tr>
+        <th>Fecha</th><th>Cuota</th><th>Saldo</th>
+        <th>Fecha</th><th>Cuota</th><th>Saldo</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in comparacion %}
+      {% set old = row.anterior %}
+      {% set cur = row.actual %}
+      <tr class="compare-row {{ row.change_level }}">
+        <td>{{ row.plazo }}</td>
+        <td>{% if old %}{{ old.fecha or '' }}{% else %}-{% endif %}</td>
+        <td>{% if old and old.cuota is not none %}S/ {{ '%.1f'|format(old.cuota) }}{% else %}-{% endif %}</td>
+        <td>{% if old and old.saldo is not none %}S/ {{ '%.1f'|format(old.saldo) }}{% else %}-{% endif %}</td>
+        <td>{% if cur %}{{ cur.fecha or '' }}{% else %}-{% endif %}</td>
+        <td>{% if cur and cur.cuota is not none %}S/ {{ '%.1f'|format(cur.cuota) }}{% else %}-{% endif %}</td>
+        <td>{% if cur and cur.saldo is not none %}S/ {{ '%.1f'|format(cur.saldo) }}{% else %}-{% endif %}</td>
+      </tr>
+      {% if row.changes %}
+      <tr class="compare-detail {{ row.change_level }}">
+        <td colspan="7">Cambio detectado en: {{ row.changes|join(', ') }}</td>
+      </tr>
+      {% endif %}
+    {% else %}
+      <tr><td colspan="7">No hay datos suficientes para comparar este cronograma.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="section card">
+  <h3>Diferencias clave</h3>
+  <table>
+    <thead><tr><th>Concepto</th><th>Anterior</th><th>Actual</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Monto del préstamo</td>
+        <td>{% if diferencias_clave.monto_anterior is not none %}S/ {{ '%.1f'|format(diferencias_clave.monto_anterior) }}{% else %}-{% endif %}</td>
+        <td>{% if diferencias_clave.monto_actual is not none %}S/ {{ '%.1f'|format(diferencias_clave.monto_actual) }}{% else %}-{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Fecha de desembolso</td>
+        <td>{{ diferencias_clave.fecha_anterior or '-' }}</td>
+        <td>{{ diferencias_clave.fecha_actual or '-' }}</td>
+      </tr>
+      <tr>
+        <td>Total de cuotas</td>
+        <td>{{ diferencias_clave.cuotas_anteriores or 0 }}</td>
+        <td>{{ diferencias_clave.cuotas_actuales or 0 }}</td>
+      </tr>
+      <tr>
+        <td>Variación de cuota inicial</td>
+        <td>{% if diferencias_clave.cuota_inicial_anterior is not none %}S/ {{ '%.1f'|format(diferencias_clave.cuota_inicial_anterior) }}{% else %}-{% endif %}</td>
+        <td>{% if diferencias_clave.cuota_inicial_actual is not none %}S/ {{ '%.1f'|format(diferencias_clave.cuota_inicial_actual) }}{% else %}-{% endif %}</td>
+      </tr>
+      <tr>
+        <td>Variación del saldo inicial</td>
+        <td>{% if diferencias_clave.saldo_inicial_anterior is not none %}S/ {{ '%.1f'|format(diferencias_clave.saldo_inicial_anterior) }}{% else %}-{% endif %}</td>
+        <td>{% if diferencias_clave.saldo_inicial_actual is not none %}S/ {{ '%.1f'|format(diferencias_clave.saldo_inicial_actual) }}{% else %}-{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

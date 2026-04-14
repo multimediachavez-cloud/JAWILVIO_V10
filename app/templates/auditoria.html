@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Auditoría del sistema</h2>
+<div class="card">
+  <table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>
+  {% for r in rows %}
+    <tr><td>{{ r.fecha }}</td><td>{{ r.usuario }}</td><td>{{ r.accion }}</td><td>{{ r.detalle }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+</div>
+{% endblock %}

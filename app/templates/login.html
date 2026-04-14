@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block auth %}
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo-wrap">
+      <img class="login-logo" src="{{ url_for('static', filename='img/logo_jawilvio_light.svg') }}" alt="Logo JAWILVIO">
+    </div>
+    <p class="muted">Sistema integrado con el Excel real de la asociación.</p>
+    {% if error %}<div class="notice" style="margin-bottom:12px">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label>Usuario</label>
+      <input type="text" name="username" value="admin" required>
+      <div style="height:10px"></div>
+      <label>Contraseña</label>
+      <input type="password" name="password" value="admin123" required>
+      <div style="height:16px"></div>
+      <button class="btn" style="width:100%">Ingresar</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

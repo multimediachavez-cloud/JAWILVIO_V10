@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Vincular saldo actual</h2>
+<p class="small-note">Usa esta pantalla para relacionar manualmente los nombres del historial mensual con los socios reales del sistema. Al guardar, los cambios se reflejan en préstamos y en el detalle del socio.</p>
+
+<div class="search">
+  <a class="btn secondary" href="{{ url_for('main.saldo_actual') }}">Volver al reporte</a>
+</div>
+
+<div class="section card">
+  <h3>Pendientes de vincular</h3>
+  <form method="post">
+    <table>
+      <thead><tr><th>Nombre en historial</th><th>Saldo</th><th>Vincular con socio</th></tr></thead>
+      <tbody>
+      {% for item in pendientes %}
+        <tr>
+          <td>{{ item.socio_nombre }}</td>
+          <td>S/ {{ '%.1f'|format(item.saldo or 0) }}</td>
+          <td>
+            <select name="asignacion_{{ item.id }}" class="full-select">
+              <option value="">Sin vincular</option>
+              {% for socio in socios %}
+                <option value="{{ socio.numero }}">{{ socio.numero }} - {{ socio.nombre }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3">No hay nombres pendientes. Todo el saldo actual ya está vinculado.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if pendientes %}
+    <div style="margin-top:14px;">
+      <button class="btn" type="submit">Guardar vinculaciones</button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+<div class="section card">
+  <h3>Ya vinculados</h3>
+  <table>
+    <thead><tr><th>Nombre en historial</th><th>Saldo</th><th>Socio vinculado</th></tr></thead>
+    <tbody>
+    {% for item in vinculados %}
+      <tr>
+        <td>{{ item.socio_nombre }}</td>
+        <td>S/ {{ '%.1f'|format(item.saldo or 0) }}</td>
+        <td>
+          {% if item.socio_numero %}
+            <a href="{{ url_for('main.socio_detalle', numero=item.socio_numero) }}">{{ item.socio_numero }} - {{ item.socio_vinculado or '-' }}</a>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3">Todavía no hay vinculaciones manuales guardadas.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,66 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<h2>Estado de cuenta por socio</h2>
+<div class="card">
+  <form method="get" class="search">
+    <span class="small-note">Selecciona un socio para revisar su estado de cuenta actual y su cronograma.</span>
+    <select name="numero" style="flex:1;padding:11px 12px;border:1px solid #d6dfec;border-radius:10px">
+      {% for s in socios %}
+        <option value="{{ s.numero }}" {% if socio and socio.numero == s.numero %}selected{% endif %}>{{ s.numero }} - {{ s.nombre }}</option>
+      {% endfor %}
+    </select>
+  <button class="btn">Actualizar estado de cuenta</button>
+    {% if socio %}
+      <a class="btn secondary" target="_blank" href="{{ url_for('main.estado_cuenta_imprimible', numero=socio.numero) }}">Abrir imprimible</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if socio %}
+<div class="grid section">
+  <div class="card"><h3>Socio</h3><div>{{ socio.nombre }}</div></div>
+  <div class="card"><h3>Saldo actual del préstamo</h3><div class="big">S/ {{ '%.2f'|format(saldo_actual or 0) }}</div></div>
+  <div class="card"><h3>Meses</h3><div class="big">{{ socio.plazo_real or socio.plazo_balance or socio.meses or 0 }}</div></div>
+  <div class="card"><h3>Cuotas del cronograma</h3><div class="big">{{ resumen.total_cuotas or 0 }}</div></div>
+  <div class="card"><h3>Intereses acumulados</h3><div class="big">S/ {{ '%.2f'|format(resumen.intereses or 0) }}</div></div>
+  <div class="card"><h3>Capital acumulado</h3><div class="big">S/ {{ '%.2f'|format(resumen.capital or 0) }}</div></div>
+  <div class="card"><h3>Total pagable</h3><div class="big">S/ {{ '%.2f'|format(resumen.total_pagable or 0) }}</div></div>
+  <div class="card"><h3>Rango</h3><div>{{ resumen.primera_fecha or '-' }} a {{ resumen.ultima_fecha or '-' }}</div></div>
+</div>
+
+<div class="section card">
+  <h3>Detalle del cronograma</h3>
+  {% if periodo_cerrado %}
+  <p class="small-note">Los meses cerrados hasta {{ periodo_cerrado }} se resaltan en verde para un mejor control.</p>
+  {% endif %}
+  <table>
+    <caption>Cronograma del socio seleccionado</caption>
+    <thead><tr><th>Plazo</th><th>Fecha</th><th>Préstamo</th><th>Interés</th><th>Abono capital</th><th>Cuota</th><th>Saldo restante de la cuota</th></tr></thead>
+    <tbody>
+    {% for c in cuotas %}
+      <tr class="{% if c.periodo_cerrado %}cronograma-cerrado{% endif %}">
+        <td>{{ c.plazo }}</td>
+        <td>{{ c.fecha or '' }}</td>
+        <td>{% if c.prestamo is not none %}S/ {{ '%.2f'|format(c.prestamo) }}{% endif %}</td>
+        <td>{% if c.interes is not none %}S/ {{ '%.2f'|format(c.interes) }}{% endif %}</td>
+        <td>{% if c.abono_capital is not none %}S/ {{ '%.2f'|format(c.abono_capital) }}{% endif %}</td>
+        <td>{% if c.cuota is not none %}S/ {{ '%.2f'|format(c.cuota) }}{% endif %}</td>
+        <td>{% if c.saldo is not none %}S/ {{ '%.2f'|format(c.saldo) }}{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7">Sin cuotas registradas.</td></tr>
+    {% endfor %}
+    {% if cuotas %}
+      <tr class="prestamo-total">
+        <td colspan="3"><strong>TOTAL</strong></td>
+        <td><strong>S/ {{ '%.2f'|format(resumen.intereses or 0) }}</strong></td>
+        <td><strong>S/ {{ '%.2f'|format(resumen.capital or 0) }}</strong></td>
+        <td><strong>S/ {{ '%.2f'|format(resumen.total_pagable or 0) }}</strong></td>
+        <td></td>
+      </tr>
+    {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

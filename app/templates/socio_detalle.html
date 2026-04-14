@@ -1,0 +1,225 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<h2>Estado de cuenta del socio</h2>
+<div class="search" style="margin-bottom:14px;">
+  <a class="btn" href="{{ url_for('main.estado_cuenta', numero=socio.numero) }}">Abrir estado de cuenta</a>
+  <a class="btn secondary" target="_blank" href="{{ url_for('main.estado_cuenta_imprimible', numero=socio.numero) }}">Abrir imprimible</a>
+</div>
+<div class="grid">
+  <div class="card"><h3>N°</h3><div class="big">{{ socio.numero }}</div></div>
+  <div class="card"><h3>Nombre</h3><div>{{ socio.nombre }}</div></div>
+  <div class="card"><h3>Plazo</h3><div class="big">{{ socio.plazo_real or socio.plazo_balance or socio.meses or 0 }} meses</div></div>
+  <div class="card"><h3>Saldo actual del préstamo</h3><div class="big">S/ {{ '%.1f'|format(saldo_actual or 0) }}</div></div>
+  <div class="card"><h3>Fecha préstamo</h3><div>{{ socio.fecha_prestamo or '-' }}</div></div>
+  <div class="card"><h3>Cuotas del cronograma</h3><div class="big">{{ resumen.total_cuotas or 0 }}</div></div>
+  <div class="card"><h3>Intereses acumulados</h3><div>S/ {{ '%.2f'|format(resumen.intereses or 0) }}</div></div>
+  <div class="card"><h3>Capital acumulado</h3><div>S/ {{ '%.2f'|format(resumen.capital or 0) }}</div></div>
+</div>
+
+{% if prestamo_excel_activo and (prestamo_excel_activo.saldo_base_ref is not none or prestamo_excel_activo.prestamo_adicional_ref is not none) %}
+<div class="card section">
+  <h3>Composición del préstamo vigente</h3>
+  <div class="grid">
+    <div class="card">
+      <h3>Saldo</h3>
+      <div class="big">S/ {{ '%.1f'|format(prestamo_excel_activo.saldo_base_ref or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Préstamo</h3>
+      <div class="big">S/ {{ '%.1f'|format(prestamo_excel_activo.prestamo_adicional_ref or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Total</h3>
+      <div class="big">S/ {{ '%.1f'|format(prestamo_excel_activo.monto_inicial or 0) }}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card section">
+  <h3>Historial de saldos mensuales</h3>
+  <table>
+    <caption>Evolución mensual del saldo</caption>
+    <thead><tr><th>Periodo</th><th>Saldo</th><th>Fuente</th></tr></thead>
+    <tbody>
+    {% for h in historico_saldos %}
+      <tr><td>{{ h.periodo }}</td><td>S/ {{ '%.2f'|format(h.saldo or 0) }}</td><td>{{ h.fuente or '-' }}</td></tr>
+    {% else %}
+      <tr><td colspan="3">Sin historial mensual vinculado para este socio.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card section">
+  <h3>Historial de prestamos del Excel</h3>
+  {% if current_role == 'Administrador' %}
+  <p class="small-note">Si un préstamo real no vino bien en el Excel, el administrador puede corregir el título visible y aplicarlo como préstamo vigente sin perder el historial del socio.</p>
+  <form method="post" class="admin-manual-loan-form">
+    <input type="hidden" name="action" value="crear_prestamo_excel_manual">
+    <input type="text" name="titulo_visible" placeholder="Título visible, por ejemplo OCTUBRE 2024 - PRÉSTAMO" required>
+    <input type="date" name="fecha_inicio" required>
+    <input type="number" name="monto_inicial" step="0.1" min="0" placeholder="Monto inicial" required>
+    <input type="number" name="cuotas" min="12" max="84" placeholder="Cuotas" required>
+    <input type="number" name="saldo_base_ref" step="0.1" min="0" placeholder="Saldo base (opcional)">
+    <input type="number" name="prestamo_adicional_ref" step="0.1" min="0" placeholder="Préstamo adicional (opcional)">
+    <label class="checkbox-inline"><input type="checkbox" name="aplicar_como_vigente" value="1"> Aplicar también como vigente</label>
+    <button class="btn">Crear préstamo histórico manual</button>
+  </form>
+  {% endif %}
+  <table>
+    <caption>Prestamos registrados en la hoja individual del socio</caption>
+    <thead><tr><th>Titulo</th><th>Inicio</th><th>Fin</th><th>Monto inicial</th><th>Saldo base</th><th>Préstamo adicional</th><th>Cuotas</th><th>Estado</th><th>Abrir</th>{% if current_role == 'Administrador' %}<th>Corrección administrativa</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for p in prestamos_excel %}
+      <tr>
+        <td>{{ p.titulo_manual or p.titulo or ('Prestamo ' ~ p.bloque_orden) }}</td>
+        <td>{{ p.fecha_inicio_visible or p.fecha_inicio or '-' }}</td>
+        <td>{{ p.fecha_fin_visible or p.fecha_fin or '-' }}</td>
+        <td>{% if p.monto_inicial is not none %}S/ {{ '%.1f'|format(p.monto_inicial) }}{% else %}-{% endif %}</td>
+        <td>{% if p.saldo_base_ref is not none %}S/ {{ '%.1f'|format(p.saldo_base_ref) }}{% else %}-{% endif %}</td>
+        <td>{% if p.prestamo_adicional_ref is not none %}S/ {{ '%.1f'|format(p.prestamo_adicional_ref) }}{% else %}-{% endif %}</td>
+        <td>{{ p.plazo_total_visible or p.plazo_total or 0 }}</td>
+        <td>{{ p.estado_visible or ('Activo en la app' if p.es_activo else 'Histórico') }}</td>
+        <td><a href="{{ url_for('main.prestamo_excel_detalle', numero=socio.numero, prestamo_excel_id=p.id) }}">Abrir cronograma</a></td>
+        {% if current_role == 'Administrador' %}
+        <td>
+          <form method="post" class="inline-admin-form">
+            <input type="hidden" name="action" value="aplicar_prestamo_excel">
+            <input type="hidden" name="prestamo_excel_id" value="{{ p.id }}">
+            <input type="text" name="titulo_visible" value="{{ p.titulo_manual or p.titulo or ('Prestamo ' ~ p.bloque_orden) }}" placeholder="Titulo visible">
+            <input type="number" name="saldo_base_ref" step="0.1" min="0" value="{{ '%.1f'|format(p.saldo_base_ref) if p.saldo_base_ref is not none else '' }}" placeholder="Saldo base">
+            <input type="number" name="prestamo_adicional_ref" step="0.1" min="0" value="{{ '%.1f'|format(p.prestamo_adicional_ref) if p.prestamo_adicional_ref is not none else '' }}" placeholder="Préstamo adicional">
+            <button class="btn {% if p.es_activo %}secondary{% endif %}">
+              {% if p.es_activo %}Reaplicar vigente{% else %}Aplicar como vigente{% endif %}
+            </button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="{% if current_role == 'Administrador' %}10{% else %}9{% endif %}">Sin prestamos historicos detectados en la hoja individual.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card section">
+  <h3>Historial de préstamos aprobados y anulados</h3>
+  <table>
+    <caption>Trazabilidad de cambios del préstamo</caption>
+    <thead><tr><th>Fecha</th><th>Acción</th><th>Estado</th><th>Monto</th><th>Cuotas</th><th>Desembolso</th><th>Cronograma anterior</th><th>Detalle</th><th>Abrir</th></tr></thead>
+    <tbody>
+    {% for h in historial_prestamos %}
+      <tr>
+        <td>{{ h.creado_en }}</td>
+        <td>{{ h.accion }}</td>
+        <td>{{ h.estado_resultante or '-' }}</td>
+        <td>{% if h.monto is not none %}S/ {{ '%.1f'|format(h.monto) }}{% else %}-{% endif %}</td>
+        <td>{{ h.cuotas or '-' }}</td>
+        <td>{{ h.fecha_desembolso or '-' }}</td>
+        <td>
+          {% if h.cuotas_snapshot %}
+            {{ h.cuotas_snapshot }} cuotas
+            {% if h.meses_anteriores %}| antes: {{ h.meses_anteriores }}{% endif %}
+          {% else %}
+            Sin reemplazo
+          {% endif %}
+        </td>
+        <td>{{ h.detalle or '-' }}</td>
+        <td>
+          {% if h.cuotas_snapshot %}
+            <a href="{{ url_for('main.historial_prestamo_detalle', numero=socio.numero, historial_id=h.id) }}">Abrir cronograma anterior</a>
+            <br>
+            <a href="{{ url_for('main.historial_prestamo_comparar', numero=socio.numero, historial_id=h.id) }}">Comparar con actual</a>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9">Sin historial de préstamos registrados para este socio.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="section card">
+  <h3>Historial de la hoja individual {{ socio.numero }}</h3>
+  {% if periodo_cerrado %}
+  <p class="small-note">Los meses cerrados hasta {{ periodo_cerrado }} se resaltan en verde para ayudarte a controlar lo ya cerrado del cronograma.</p>
+  {% endif %}
+  {% if cronograma_vigente_terminado %}
+  <p class="small-note">El último préstamo vigente ya fue cancelado. Se mantiene visible aquí como referencia histórica mientras registras o aplicas el préstamo nuevo de la socia.</p>
+  {% if current_role == 'Administrador' %}
+  <p class="small-note">Puedes usar la corrección administrativa del bloque histórico o crear un préstamo histórico manual para dejar reflejado el préstamo nuevo.</p>
+  {% endif %}
+  {% endif %}
+  {% if prestamo_excel_referencia %}
+  <div class="historico-sheet-header">
+    <div class="historico-sheet-socio">SOCIO: {{ socio.nombre|upper }}</div>
+    <div class="historico-sheet-title">{{ (prestamo_excel_referencia.titulo_manual or prestamo_excel_referencia.titulo or ('Prestamo ' ~ prestamo_excel_referencia.bloque_orden))|upper }}</div>
+  </div>
+  {% endif %}
+  <div class="historico-sheet-layout">
+  <table class="historico-sheet-table">
+    <caption>Cronograma histórico del socio</caption>
+    <thead><tr><th>PLAZO</th><th>FECHA</th><th>PRÉSTAMO S/.</th><th>INTERES</th><th>ABONO DE CAPITAL</th><th>CUOTA</th><th>SALDO</th></tr></thead>
+    <tbody>
+    {% for c in cronograma_historico %}
+      <tr class="{% if c.periodo_cerrado %}cronograma-cerrado{% endif %}">
+        <td>{{ c.plazo }}</td>
+        <td>{{ c.fecha_display or '' }}</td>
+        <td>{% if c.prestamo is not none %}S/ {{ '%.1f'|format(c.prestamo) }}{% endif %}</td>
+        <td>{% if c.plazo == 0 and c.interes is not none and c.interes <= 1 %}{{ '%.2f'|format((c.interes or 0) * 100) }}%{% elif c.interes is not none %}S/ {{ '%.1f'|format(c.interes) }}{% endif %}</td>
+        <td>{% if c.abono_capital is not none %}S/ {{ '%.1f'|format(c.abono_capital) }}{% endif %}</td>
+        <td>{% if c.cuota is not none %}S/ {{ '%.1f'|format(c.cuota) }}{% endif %}</td>
+        <td>{% if c.saldo is not none %}S/ {{ '%.1f'|format(c.saldo) }}{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7">{% if cronograma_vigente_terminado %}Préstamo vigente cancelado. Falta registrar o aplicar el préstamo nuevo de la socia.{% else %}Sin cuotas registradas.{% endif %}</td></tr>
+    {% endfor %}
+    {% if cronograma_historico %}
+      <tr class="prestamo-total">
+        <td colspan="3"><strong>TOTAL</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(resumen_historico.intereses or 0) }}</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(resumen_historico.capital or 0) }}</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(resumen_historico.total_pagable or 0) }}</strong></td>
+        <td></td>
+      </tr>
+    {% endif %}
+    </tbody>
+  </table>
+  {% if prestamo_excel_referencia and (prestamo_excel_referencia.saldo_base_ref is not none or prestamo_excel_referencia.prestamo_adicional_ref is not none) %}
+  <div class="historico-sheet-summary">
+    <div class="historico-sheet-summary-row">
+      <span>SALDO</span>
+      <strong>S/ {{ '%.2f'|format(prestamo_excel_referencia.saldo_base_ref or 0) }}</strong>
+    </div>
+    <div class="historico-sheet-summary-row">
+      <span>PRESTAMO</span>
+      <strong>S/ {{ '%.2f'|format(prestamo_excel_referencia.prestamo_adicional_ref or 0) }}</strong>
+    </div>
+    <div class="historico-sheet-summary-row total">
+      <span>TOTAL</span>
+      <strong>S/ {{ '%.2f'|format(prestamo_excel_referencia.monto_inicial or 0) }}</strong>
+    </div>
+  </div>
+  {% endif %}
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Última asistencia</h3>
+  <table>
+    <thead><tr><th>Fecha</th><th>Estado</th><th>Observación</th></tr></thead>
+    <tbody>
+    {% for a in asistencia %}
+      <tr><td>{{ a.fecha }}</td><td>{{ a.estado }}</td><td>{{ a.observacion }}</td></tr>
+    {% else %}
+      <tr><td colspan="3">Sin registros de asistencia.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

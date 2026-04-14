@@ -1,0 +1,335 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Vista general</div>
+    <h2>Panel de control</h2>
+    <p class="module-subtitle">Supervisa la cartera, la recaudación del período y la colocación del fondo desde un solo lugar.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+    <a class="btn secondary" href="{{ url_for('main.estado_cuenta') }}">Abrir estado de cuenta</a>
+  </div>
+</div>
+<div class="notice" style="margin-bottom:14px;">
+  <strong>Estado de importación:</strong> {{ import_status }}
+</div>
+
+<div class="card section {% if periodo_actual_resumen.colocacion_completa %}compare-summary summary-ok{% else %}compare-summary summary-warn{% endif %}">
+  <strong>Período actual {{ periodo_actual_resumen.periodo }}:</strong>
+  {% if periodo_actual_resumen.colocacion_completa %}
+    fondo mensual completamente colocado.
+  {% else %}
+    todavía faltan S/ {{ '%.1f'|format(periodo_actual_resumen.saldo_por_colocar or 0) }} por colocar en este mes.
+  {% endif %}
+  <div class="small-note" style="margin-top:6px">
+    Fondo del mes: S/ {{ '%.1f'|format(periodo_actual_resumen.total_recaudado or 0) }} |
+    Cuotas del mes: S/ {{ '%.1f'|format(periodo_actual_resumen.total_prestamos or 0) }} |
+    Aportes fijos: S/ {{ '%.1f'|format(periodo_actual_resumen.total_aportes or 0) }}
+  </div>
+</div>
+
+<div class="dashboard-group section">
+  <div class="dashboard-group-head">
+    <div class="module-eyebrow">Cartera</div>
+    <h3>Visión de cartera</h3>
+    <p class="small-note">Indicadores estructurales de la asociación y del saldo vigente que sirve como referencia financiera.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Socios</h3><div class="big">{{ total_socios }}</div></div>
+    <div class="card"><h3>Préstamos activos</h3><div class="big">{{ prestamos_activos }}</div></div>
+    <div class="card"><h3>Saldo actual total</h3><div class="big">S/ {{ '%.1f'|format(saldo_actual_total_panel or 0) }}</div></div>
+    <div class="card"><h3>Acciones por socio</h3><div class="big">S/ {{ '%.1f'|format(acciones_por_socio or 0) }}</div></div>
+    <div class="card"><h3>Total de préstamo acumulado</h3><div class="big">S/ {{ '%.1f'|format(total_prestamo_acumulado or 0) }}</div></div>
+    <div class="card"><h3>Cuota promedio</h3><div class="big">S/ {{ '%.2f'|format(cuota_promedio) }}</div></div>
+    <div class="card">
+      <h3>Mayor saldo pendiente</h3>
+      <div class="big">{% if mayor_saldo %}S/ {{ '%.1f'|format(mayor_saldo.saldo_actual or 0) }}{% else %}S/ 0.0{% endif %}</div>
+      <div class="small-note" style="margin-top:6px">{% if mayor_saldo %}{{ mayor_saldo.numero }} - {{ mayor_saldo.nombre }}{% else %}Sin registros{% endif %}</div>
+    </div>
+    <div class="card">
+      <h3>Historial múltiple</h3>
+      <div class="big">{{ resumen_prestamos_multiples.socios_multiples or 0 }}</div>
+      <div class="small-note" style="margin-top:6px">Socios con más de un préstamo histórico en su hoja.</div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-group section">
+  <div class="dashboard-group-head">
+    <div class="module-eyebrow">Período actual</div>
+    <h3>Seguimiento del mes</h3>
+    <p class="small-note">Resumen del período en curso: recaudación, fondo del mes y avance de colocación.</p>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>Período actual</h3>
+      <div class="big">{{ periodo_actual_resumen.periodo }}</div>
+    </div>
+    <div class="card">
+      <h3>Estado del período</h3>
+      <div class="big">{{ periodo_actual_resumen.estado }}</div>
+    </div>
+    <div class="card">
+      <h3>Socios del período</h3>
+      <div class="big">{{ periodo_actual_resumen.socios or 0 }}</div>
+    </div>
+    <div class="card">
+      <h3>Cuotas del mes</h3>
+      <div class="big">S/ {{ '%.1f'|format(periodo_actual_resumen.total_prestamos or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Aportes fijos</h3>
+      <div class="big">S/ {{ '%.1f'|format(periodo_actual_resumen.total_aportes or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Total mensual actual</h3>
+      <div class="big">S/ {{ '%.1f'|format(periodo_actual_resumen.total_recaudado or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Ya colocado</h3>
+      <div class="big">S/ {{ '%.1f'|format(periodo_actual_resumen.total_colocado or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Saldo por colocar</h3>
+      <div class="big">S/ {{ '%.1f'|format(periodo_actual_resumen.saldo_por_colocar or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Promedio por socio</h3>
+      <div class="big">S/ {{ '%.1f'|format(periodo_actual_resumen.promedio_por_socio or 0) }}</div>
+    </div>
+    <div class="card">
+      <h3>Avance de colocación</h3>
+      <div class="big">{{ '%.1f'|format(periodo_actual_resumen.porcentaje_colocado or 0) }}%</div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-group section">
+  <div class="dashboard-group-head">
+    <div class="module-eyebrow">Acciones pendientes</div>
+    <h3>Seguimiento operativo</h3>
+    <p class="small-note">Puntos de control rápidos para administrar reuniones, permisos y la colocación del fondo del mes.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Reuniones registradas</h3><div class="big">{{ reuniones }}</div></div>
+    <div class="card"><h3>Permisos registrados</h3><div class="big">{{ permisos }}</div></div>
+    <div class="card">
+      <h3>Mayor cobro del mes</h3>
+      <div class="big">{% if mayor_total_mes %}S/ {{ '%.1f'|format(mayor_total_mes.total_mes or 0) }}{% else %}S/ 0.0{% endif %}</div>
+      <div class="small-note" style="margin-top:6px">{% if mayor_total_mes %}{{ mayor_total_mes.socio_numero }} - {{ mayor_total_mes.socio_nombre }}{% else %}Sin obligaciones del período{% endif %}</div>
+    </div>
+    <div class="card">
+      <h3>Colocaciones detectadas</h3>
+      <div class="big">{{ colocacion_detalle_rows|length }}</div>
+      <div class="small-note" style="margin-top:6px">Movimientos identificados para el período actual.</div>
+    </div>
+    <div class="card"><h3>Préstamos nuevos del período</h3><div class="big">{{ prestamos_periodo.total or 0 }}</div></div>
+    <div class="card"><h3>Reservados</h3><div class="big">{{ prestamos_periodo.reservados or 0 }}</div></div>
+    <div class="card"><h3>Aprobados</h3><div class="big">{{ prestamos_periodo.aprobados or 0 }}</div></div>
+    <div class="card"><h3>Detectados por Excel</h3><div class="big">{{ colocacion_counts.excel or 0 }}</div></div>
+  </div>
+</div>
+
+<div class="split section">
+  <div class="card financial-panel">
+    <div class="financial-panel-header">
+      <div>
+        <h3>Panel financiero</h3>
+        <div class="small-note">Resumen ejecutivo de cartera, recuperación histórica y colocación del período actual.</div>
+      </div>
+      <div class="financial-period-chip">Corte {{ periodo_financiero_panel }}</div>
+    </div>
+
+    <div class="financial-highlight-grid">
+      <div class="financial-stat financial-stat-primary">
+        <div class="label">Saldo actual total</div>
+        <div class="value">S/ {{ '%.1f'|format(panel_financiero.saldo_actual_total or 0) }}</div>
+        <div class="hint">Cartera vigente tomada del último período colocado o cerrado.</div>
+      </div>
+      <div class="financial-stat">
+        <div class="label">Total de préstamo acumulado</div>
+        <div class="value">S/ {{ '%.1f'|format(panel_financiero.total_prestamo_acumulado or 0) }}</div>
+        <div class="hint">Base histórica oficial de la asociación.</div>
+      </div>
+      <div class="financial-stat">
+        <div class="label">Ya colocado en el período</div>
+        <div class="value">S/ {{ '%.1f'|format(panel_financiero.ya_colocado or 0) }}</div>
+        <div class="hint">Fondo del mes ya prestado dentro del mismo período.</div>
+      </div>
+      <div class="financial-stat">
+        <div class="label">Saldo por colocar</div>
+        <div class="value">S/ {{ '%.1f'|format(panel_financiero.por_colocar or 0) }}</div>
+        <div class="hint">Fondo pendiente por distribuir en el período actual.</div>
+      </div>
+    </div>
+
+    <div class="financial-progress-list">
+      <div class="financial-progress-item">
+        <div class="metric">
+          <span>Cartera vigente sobre préstamo acumulado</span>
+          <strong>{{ '%.1f'|format(panel_financiero.cartera_vigente_pct or 0) }}%</strong>
+        </div>
+        <div class="bar"><div style="width:{{ panel_financiero.cartera_vigente_pct or 0 }}%"></div></div>
+      </div>
+      <div class="financial-progress-item">
+        <div class="metric">
+          <span>Avance de colocación del período</span>
+          <strong>{{ '%.1f'|format(panel_financiero.colocacion_pct or 0) }}%</strong>
+        </div>
+        <div class="bar"><div style="width:{{ panel_financiero.colocacion_pct or 0 }}%"></div></div>
+      </div>
+    </div>
+
+    <div class="financial-foot-grid">
+      <div class="financial-foot-item">
+        <span>Fondo del período</span>
+        <strong>S/ {{ '%.1f'|format(panel_financiero.fondo_mes or 0) }}</strong>
+      </div>
+      <div class="financial-foot-item">
+        <span>Ya colocado</span>
+        <strong>S/ {{ '%.1f'|format(panel_financiero.ya_colocado or 0) }}</strong>
+      </div>
+      <div class="financial-foot-item">
+        <span>Saldo por colocar</span>
+        <strong>S/ {{ '%.1f'|format(panel_financiero.por_colocar or 0) }}</strong>
+      </div>
+      <div class="financial-foot-item">
+        <span>Brecha de colocación</span>
+        <strong>{{ '%.1f'|format(panel_financiero.brecha_colocacion_pct or 0) }}%</strong>
+      </div>
+      <div class="financial-foot-item">
+        <span>Promedio por socio</span>
+        <strong>S/ {{ '%.1f'|format(panel_financiero.promedio_periodo or 0) }}</strong>
+      </div>
+      <div class="financial-foot-item">
+        <span>Acciones por socio</span>
+        <strong>S/ {{ '%.1f'|format(panel_financiero.acciones_por_socio or 0) }}</strong>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Vista rápida de socios</h3>
+    <table><thead><tr><th>N°</th><th>Nombre</th><th>Cuotas</th><th>Saldo</th></tr></thead><tbody>
+    {% for s in socios %}
+      <tr><td>{{ s.numero }}</td><td><a href="{{ url_for('main.socio_detalle', numero=s.numero) }}">{{ s.nombre }}</a></td><td>{{ s.plazo_real or s.plazo_balance or s.meses }}</td><td>S/ {{ '%.1f'|format(s.saldo_periodo or 0) }}</td></tr>
+    {% endfor %}
+    </tbody></table>
+  </div>
+</div>
+
+<div class="split section">
+  <div class="card">
+    <h3>Resumen operativo del período</h3>
+    <div class="metric"><span>Socios considerados</span><strong>{{ periodo_actual_resumen.socios or 0 }}</strong></div>
+    <div class="metric"><span>Préstamos nuevos del período</span><strong>{{ prestamos_periodo.total or 0 }}</strong></div>
+    <div class="metric"><span>Reservados</span><strong>{{ prestamos_periodo.reservados or 0 }}</strong></div>
+    <div class="metric"><span>Aprobados</span><strong>{{ prestamos_periodo.aprobados or 0 }}</strong></div>
+    <div class="metric"><span>Detectados por Excel</span><strong>{{ colocacion_counts.excel or 0 }}</strong></div>
+    <div class="metric"><span>Detectados por app aprobada</span><strong>{{ colocacion_counts.app_aprobado or 0 }}</strong></div>
+    <div class="metric"><span>Detectados por app reservada</span><strong>{{ colocacion_counts.app_reservado or 0 }}</strong></div>
+    {% if periodo_anterior %}
+    <div class="metric"><span>Período anterior</span><strong>{{ periodo_anterior.periodo }}</strong></div>
+    <div class="metric"><span>Total mensual anterior</span><strong>S/ {{ '%.1f'|format(periodo_anterior.total_recaudado or 0) }}</strong></div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Accesos rápidos</h3>
+    <div class="dashboard-links">
+      <a class="btn" href="{{ url_for('main.aportaciones_mensuales', periodo=periodo_actual_resumen.periodo) }}">Abrir aportaciones</a>
+      <a class="btn secondary" href="{{ url_for('main.cierre_mensual', periodo=periodo_actual_resumen.periodo) }}">Abrir cierre mensual</a>
+      <a class="btn secondary" href="{{ url_for('main.nuevos_prestamos', periodo=periodo_actual_resumen.periodo) }}">Abrir nuevos préstamos</a>
+      <a class="btn secondary" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+    </div>
+    <div class="small-note" style="margin-top:10px">Usa estos accesos para continuar el ciclo mensual sin salir del panel.</div>
+  </div>
+</div>
+
+<div class="dashboard-group section">
+  <div class="dashboard-group-head">
+    <div class="module-eyebrow">Análisis y seguimiento</div>
+    <h3>Lectura detallada de la operación</h3>
+    <p class="small-note">Tablas de apoyo para revisar saldos, detalle del período, colocación detectada e historial reciente.</p>
+  </div>
+
+  <div class="split">
+    <div class="card">
+      <h3>Mayores saldos pendientes</h3>
+      <table>
+        <thead><tr><th>Socio</th><th>Saldo</th><th>Cuotas</th></tr></thead>
+        <tbody>
+        {% for row in top_saldos %}
+          <tr>
+            <td><a href="{{ url_for('main.socio_detalle', numero=row.numero) }}">{{ row.numero }} - {{ row.nombre }}</a></td>
+            <td>S/ {{ '%.1f'|format(row.saldo_actual or 0) }}</td>
+            <td>{{ row.plazo_real or 0 }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No hay saldos pendientes registrados.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Detalle del período actual</h3>
+      <table>
+        <thead><tr><th>Socio</th><th>Cuota del mes</th><th>Aporte</th><th>Total</th><th>Saldo</th></tr></thead>
+        <tbody>
+        {% for row in detalle_periodo %}
+          <tr>
+            <td>{{ row.socio_numero }} - {{ row.socio_nombre }}</td>
+            <td>S/ {{ '%.1f'|format(row.cuota_prestamo or 0) }}</td>
+            <td>S/ {{ '%.1f'|format(row.aporte_mensual or 0) }}</td>
+            <td>S/ {{ '%.1f'|format(row.total_mes or 0) }}</td>
+            <td>S/ {{ '%.1f'|format(row.saldo_actual or 0) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">Aún no hay obligaciones calculadas para este período.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="card">
+      <h3>Colocación detectada del período</h3>
+      <table>
+        <thead><tr><th>Socio</th><th>Fecha</th><th>Monto</th><th>Origen</th></tr></thead>
+        <tbody>
+        {% for row in colocacion_detalle_rows %}
+          <tr>
+            <td>{{ row.socio_numero }} - {{ row.socio_nombre }}</td>
+            <td>{{ row.fecha_inicio or '-' }}</td>
+            <td>{% if row.monto_inicial is not none %}S/ {{ '%.1f'|format(row.monto_inicial) }}{% else %}-{% endif %}</td>
+            <td>{{ row.origen }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">Aún no hay colocación registrada para este período.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Historial reciente de períodos</h3>
+      <table>
+        <thead><tr><th>Período</th><th>Estado</th><th>Total mensual</th><th>Ya colocado</th><th>Saldo por colocar</th></tr></thead>
+        <tbody>
+        {% for row in historial_periodos %}
+          <tr {% if row.periodo == periodo_actual_resumen.periodo %}class="prestamo-total"{% endif %}>
+            <td>{{ row.periodo }}</td>
+            <td>{{ row.estado }}</td>
+            <td>S/ {{ '%.1f'|format(row.total_recaudado or 0) }}</td>
+            <td>S/ {{ '%.1f'|format(row.total_colocado or 0) }}</td>
+            <td>S/ {{ '%.1f'|format(row.saldo_por_colocar or 0) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">Aún no hay períodos registrados.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

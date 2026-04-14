@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Préstamo histórico del Excel</h2>
+<div class="search" style="margin-bottom:14px;">
+  <a class="btn" href="{{ url_for('main.socio_detalle', numero=socio.numero) }}">Volver al socio</a>
+</div>
+
+<div class="section card">
+  <p class="small-note">Este cronograma viene directamente de la hoja individual del Excel y se conserva como referencia histórica del socio.</p>
+  {% if periodo_cerrado %}
+  <p class="small-note">Los meses cerrados hasta {{ periodo_cerrado }} se muestran en verde.</p>
+  {% endif %}
+
+  <div class="historico-sheet-header">
+    <div class="historico-sheet-socio">SOCIO: {{ socio.nombre|upper }}</div>
+    <div class="historico-sheet-title">{{ (prestamo_excel.titulo_manual or prestamo_excel.titulo or ('Prestamo ' ~ prestamo_excel.bloque_orden))|upper }}</div>
+  </div>
+
+  <div class="historico-sheet-layout">
+    <table class="historico-sheet-table">
+      <caption>Cronograma histórico del bloque seleccionado</caption>
+      <thead>
+        <tr>
+          <th>PLAZO</th>
+          <th>FECHA</th>
+          <th>PRÉSTAMO S/.</th>
+          <th>INTERES</th>
+          <th>ABONO DE CAPITAL</th>
+          <th>CUOTA</th>
+          <th>SALDO</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in cronograma %}
+        <tr class="{% if c.periodo_cerrado %}cronograma-cerrado{% endif %}">
+          <td>{{ c.plazo }}</td>
+          <td>{{ c.fecha_display or c.fecha or '' }}</td>
+          <td>{% if c.prestamo is not none %}S/ {{ '%.1f'|format(c.prestamo) }}{% endif %}</td>
+          <td>{% if c.plazo == 0 and c.interes is not none and c.interes <= 1 %}{{ '%.2f'|format((c.interes or 0) * 100) }}%{% elif c.interes is not none %}S/ {{ '%.1f'|format(c.interes) }}{% endif %}</td>
+          <td>{% if c.abono_capital is not none %}S/ {{ '%.1f'|format(c.abono_capital) }}{% endif %}</td>
+          <td>{% if c.cuota is not none %}S/ {{ '%.1f'|format(c.cuota) }}{% endif %}</td>
+          <td>{% if c.saldo is not none %}S/ {{ '%.1f'|format(c.saldo) }}{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">No hay cuotas históricas guardadas para este préstamo.</td></tr>
+      {% endfor %}
+      {% if cronograma %}
+        <tr class="prestamo-total">
+          <td colspan="3"><strong>TOTAL</strong></td>
+          <td><strong>S/ {{ '%.1f'|format(prestamo_excel.interes_total_visible or prestamo_excel.interes_total or 0) }}</strong></td>
+          <td><strong>S/ {{ '%.1f'|format(prestamo_excel.capital_total_visible or prestamo_excel.capital_total or 0) }}</strong></td>
+          <td><strong>S/ {{ '%.1f'|format(prestamo_excel.cuota_total_visible or prestamo_excel.cuota_total or 0) }}</strong></td>
+          <td></td>
+        </tr>
+      {% endif %}
+      </tbody>
+    </table>
+
+    {% if prestamo_excel.saldo_base_ref is not none or prestamo_excel.prestamo_adicional_ref is not none %}
+    <div class="historico-sheet-summary">
+      <div class="historico-sheet-summary-row">
+        <span>SALDO</span>
+        <strong>S/ {{ '%.2f'|format(prestamo_excel.saldo_base_ref or 0) }}</strong>
+      </div>
+      <div class="historico-sheet-summary-row">
+        <span>PRESTAMO</span>
+        <strong>S/ {{ '%.2f'|format(prestamo_excel.prestamo_adicional_ref or 0) }}</strong>
+      </div>
+      <div class="historico-sheet-summary-row total">
+        <span>TOTAL</span>
+        <strong>S/ {{ '%.2f'|format(prestamo_excel.monto_inicial or 0) }}</strong>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

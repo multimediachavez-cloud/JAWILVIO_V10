@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="dashboard-shell">
+  <div class="module-header">
+    <div>
+      <div class="module-eyebrow">Cierre hist&oacute;rico oficial</div>
+      <h2>Saldo actual</h2>
+      <p class="module-subtitle">Este m&oacute;dulo resume el &uacute;ltimo cierre financiero oficial con saldo actual total, composici&oacute;n del mes y colocaci&oacute;n realizada dentro del mismo per&iacute;odo.</p>
+    </div>
+    <div class="module-actions">
+      <a class="btn secondary" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+      {% if session.get('role') == 'Administrador' %}
+      <a class="btn" href="{{ url_for('main.vincular_saldo_actual') }}">Vincular nombres pendientes</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="dashboard-hero dashboard-hero-ok">
+    <div class="dashboard-hero-copy">
+      <div class="module-eyebrow">Per&iacute;odo {{ cierre_historico.periodo_label }}</div>
+      <h3>{{ cierre_historico.periodo_label }} qued&oacute; registrado como cierre oficial</h3>
+      <p>El saldo actual total y las acciones por socio se toman del &uacute;ltimo per&iacute;odo colocado o cerrado. La colocaci&oacute;n del mes se muestra con los socios que recibieron los nuevos pr&eacute;stamos dentro del mismo per&iacute;odo.</p>
+    </div>
+    <div class="dashboard-hero-metrics">
+      <div class="hero-chip">
+        <span>Estado</span>
+        <strong>{{ cierre_historico.estado }}</strong>
+      </div>
+      <div class="hero-chip">
+        <span>Saldo actual total</span>
+        <strong>S/ {{ '%.1f'|format(cierre_historico.saldo_actual_total) }}</strong>
+      </div>
+      <div class="hero-chip">
+        <span>Acciones por socio</span>
+        <strong>S/ {{ '%.1f'|format(cierre_historico.acciones_por_socio) }}</strong>
+      </div>
+      <div class="hero-chip">
+        <span>Total mensual</span>
+        <strong>S/ {{ '%.1f'|format(cierre_historico.total_mensual) }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Cierre oficial</div>
+      <h3>Resumen hist&oacute;rico del per&iacute;odo</h3>
+      <p class="small-note">Indicadores oficiales que ya no deben moverse porque corresponden al &uacute;ltimo cierre financiero validado.</p>
+    </div>
+    <div class="dashboard-metric-grid dashboard-metric-grid-primary">
+      <div class="dashboard-metric-card compact">
+        <span class="label">Saldo actual total</span>
+        <div class="big">S/ {{ '%.1f'|format(cierre_historico.saldo_actual_total) }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Acciones por socio</span>
+        <div class="big">S/ {{ '%.1f'|format(cierre_historico.acciones_por_socio) }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Total de pr&eacute;stamo acumulado</span>
+        <div class="big">S/ {{ '%.1f'|format(cierre_historico.total_prestamo_acumulado) }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Ya colocado</span>
+        <div class="big">S/ {{ '%.1f'|format(cierre_historico.ya_colocado) }}</div>
+        <div class="small-note">Saldo por colocar: S/ {{ '%.1f'|format(cierre_historico.saldo_por_colocar) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Composici&oacute;n del mes</div>
+      <h3>C&oacute;mo se form&oacute; el total mensual</h3>
+      <p class="small-note">Siguiendo la l&oacute;gica de tu asociaci&oacute;n, el fondo del mes se forma con la suma de cuotas del per&iacute;odo m&aacute;s el aporte fijo de S/ 150 por socio.</p>
+    </div>
+    <div class="dashboard-main-split">
+      <div class="card">
+        <h3>F&oacute;rmula del mes</h3>
+        <div class="dashboard-metric-grid dashboard-metric-grid-secondary">
+          <div class="dashboard-metric-card compact">
+            <span class="label">Cuotas del per&iacute;odo</span>
+            <div class="big">S/ {{ '%.1f'|format(composicion_mes.cuotas_mes) }}</div>
+          </div>
+          <div class="dashboard-metric-card compact">
+            <span class="label">Aportes fijos</span>
+            <div class="big">S/ {{ '%.1f'|format(composicion_mes.aportes_fijos) }}</div>
+          </div>
+          <div class="dashboard-metric-card compact">
+            <span class="label">Total mensual</span>
+            <div class="big">S/ {{ '%.1f'|format(composicion_mes.total_mensual) }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Lectura r&aacute;pida</h3>
+        <p class="small-note">F&oacute;rmula oficial del per&iacute;odo:</p>
+        <p><strong>S/ {{ '%.1f'|format(composicion_mes.cuotas_mes) }}</strong> de cuotas del per&iacute;odo + <strong>S/ {{ '%.1f'|format(composicion_mes.aportes_fijos) }}</strong> de aportes fijos = <strong>S/ {{ '%.1f'|format(composicion_mes.total_mensual) }}</strong> de fondo mensual.</p>
+        <p class="small-note">Ese total se contrasta con la colocaci&oacute;n registrada del mismo per&iacute;odo para dejar visible si el cierre ya qued&oacute; completo.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Colocaci&oacute;n del mes</div>
+      <h3>Socios que recibieron el fondo del per&iacute;odo</h3>
+      <p class="small-note">Detalle de la colocaci&oacute;n del mismo per&iacute;odo para dejar visible a qui&eacute;nes se asign&oacute; el fondo mensual del cierre oficial.</p>
+    </div>
+    <div class="card">
+      <table>
+        <caption>Colocaci&oacute;n oficial del fondo del per&iacute;odo {{ cierre_historico.periodo_label }}</caption>
+        <thead><tr><th>Socio</th><th>Fecha de inicio</th><th>Monto inicial</th><th>Cuotas</th><th>Origen</th></tr></thead>
+        <tbody>
+        {% for item in colocaciones %}
+          <tr>
+            <td>
+              {% if item.numero %}
+                <a href="{{ url_for('main.socio_detalle', numero=item.numero) }}">{{ item.numero }} - {{ item.nombre }}</a>
+              {% else %}
+                {{ item.nombre }}
+              {% endif %}
+            </td>
+            <td>{{ item.fecha_inicio or '-' }}</td>
+            <td>S/ {{ '%.1f'|format(item.monto_inicial) }}</td>
+            <td>{{ item.cuotas or 0 }}</td>
+            <td>{{ item.origen }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No se registraron colocaciones para el per&iacute;odo seleccionado.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Saldos del cierre</div>
+      <h3>Lectura de saldos por socio</h3>
+      <p class="small-note">Los saldos del hist&oacute;rico mensual siguen disponibles para revisar distribuci&oacute;n, extremos y detalle por socio.</p>
+    </div>
+    <div class="dashboard-metric-grid dashboard-metric-grid-secondary">
+      <div class="dashboard-metric-card compact">
+        <span class="label">Registros cargados</span>
+        <div class="big">{{ resumen.cantidad }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Socios vinculados</span>
+        <div class="big">{{ resumen.vinculados }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Saldo m&iacute;nimo</span>
+        <div class="big">S/ {{ '%.1f'|format(resumen.minimo) }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Saldo m&aacute;ximo</span>
+        <div class="big">S/ {{ '%.1f'|format(resumen.maximo) }}</div>
+      </div>
+    </div>
+
+    <div class="card section">
+      <p class="small-note">La l&iacute;nea de referencia se fija en S/ {{ '%.0f'|format(umbral) }} para resaltar los saldos altos dentro del cierre oficial del per&iacute;odo.</p>
+      <div class="loan-balance-list">
+        {% for item in saldos %}
+          <div class="loan-row {% if item.supera_umbral %}highlight{% endif %}">
+            <div class="loan-name">
+              {% if item.numero %}
+                <a href="{{ url_for('main.socio_detalle', numero=item.numero) }}">{{ item.nombre }}</a>
+              {% else %}
+                {{ item.nombre }}
+              {% endif %}
+            </div>
+            <div class="loan-bar-track">
+              <div class="loan-threshold" style="left: {{ (umbral / resumen.maximo * 100) if resumen.maximo else 0 }}%"></div>
+              <div class="loan-bar" style="width: {{ item.pct }}%"></div>
+            </div>
+            <div class="loan-value">S/ {{ '%.1f'|format(item.saldo) }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Detalle tabular</h3>
+      <table>
+        <thead><tr><th>Socio</th><th>N&deg; socio</th><th>Saldo</th><th>Estado</th></tr></thead>
+        <tbody>
+        {% for item in saldos %}
+          <tr>
+            <td>{{ item.nombre }}</td>
+            <td>{{ item.numero or '-' }}</td>
+            <td>S/ {{ '%.1f'|format(item.saldo) }}</td>
+            <td>{% if item.supera_umbral %}Mayor o igual a S/ {{ '%.0f'|format(umbral) }}{% else %}Menor a S/ {{ '%.0f'|format(umbral) }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

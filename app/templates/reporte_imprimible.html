@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Reporte general imprimible</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:28px;color:#17263c}
+    h1,h2,h3,p{margin:0}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:2px solid #dbe4f0}
+    .brand{display:flex;gap:14px;align-items:flex-start}
+    .brand-logo{width:220px;max-width:100%;height:auto;display:block}
+    .brand-copy h1{font-size:22px;line-height:1.15;margin-bottom:6px}
+    .brand-copy .subtitle{font-size:14px;color:#58708c;margin-bottom:4px}
+    .brand-copy .location{font-size:13px;color:#6a8099}
+    .header-meta{text-align:right;min-width:220px}
+    .header-meta .doc-title{font-size:18px;font-weight:700;margin-bottom:8px}
+    .header-meta .meta-line{font-size:13px;color:#58708c;line-height:1.5}
+    .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
+    .box{border:1px solid #dbe4f0;border-radius:10px;padding:12px}
+    .box strong{display:block;margin-bottom:6px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border:1px solid #dbe4f0;padding:8px 10px;font-size:13px}
+    th{background:#f5f8fc}
+    .text-right{text-align:right}
+    @media print{body{margin:16px}}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <img class="brand-logo" src="{{ url_for('static', filename='img/logo_jawilvio_light.svg') }}" alt="Logo JAWILVIO">
+      <div class="brand-copy">
+        <h1>{{ app_nombre }}</h1>
+        <div class="subtitle">Reporte general de socios y cartera vigente</div>
+        <div class="location">{{ app_ubicacion }}</div>
+      </div>
+    </div>
+    <div class="header-meta">
+      <div class="doc-title">Reporte general imprimible</div>
+      <div class="meta-line"><strong>Período:</strong> {{ periodo_actual }}</div>
+      <div class="meta-line"><strong>Emitido:</strong> {{ fecha_emision }}</div>
+      <div class="meta-line"><strong>Documento:</strong> Cartera general</div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div class="box"><strong>Total de socios</strong>{{ resumen.socios }}</div>
+    <div class="box"><strong>Saldo actual total</strong>S/ {{ '%.2f'|format(resumen.saldo_total or 0) }}</div>
+    <div class="box"><strong>Socios listados</strong>{{ socios|length }}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>N°</th>
+        <th>Socio</th>
+        <th>Cuotas</th>
+        <th>Fecha de préstamo</th>
+        <th>Saldo actual</th>
+        <th>Reunión</th>
+        <th>Permisos</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in socios %}
+      <tr>
+        <td>{{ s.numero }}</td>
+        <td>{{ s.nombre }}</td>
+        <td>{{ s.plazo_real or s.plazo_balance or s.meses }}</td>
+        <td>{{ s.fecha_prestamo or '' }}</td>
+        <td class="text-right">S/ {{ '%.2f'|format(s.saldo_periodo or 0) }}</td>
+        <td>{{ s.reunion or '-' }}</td>
+        <td>{{ s.permisos or '-' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <script>window.print()</script>
+</body>
+</html>

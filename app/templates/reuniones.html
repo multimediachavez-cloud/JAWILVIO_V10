@@ -1,0 +1,13 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<h2>Reuniones y permisos del Excel</h2>
+<table>
+  <thead><tr><th>N°</th><th>Socio</th><th>Reunión</th><th>Permisos</th></tr></thead>
+  <tbody>
+  {% for f in filas %}
+    <tr><td>{{ f.numero }}</td><td>{{ f.nombre }}</td><td>{{ f.reunion or '-' }}</td><td>{{ f.permisos or '-' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

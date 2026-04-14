@@ -1,0 +1,94 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Sistema</div>
+    <h2>Restaurar respaldo</h2>
+    <p class="module-subtitle">Sube un respaldo ZIP generado por la app y elige si quieres restaurar solo la base de datos o hacer una restauración completa con fotos y Excel.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn secondary" href="{{ url_for('main.backup') }}">Descargar respaldo actual</a>
+  </div>
+</div>
+
+<div class="dashboard-metric-grid dashboard-metric-grid-secondary section">
+  <div class="dashboard-metric-card compact">
+    <span class="label">Base activa</span>
+    <div class="big">{{ restore_info.database_name }}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Excel activo</span>
+    <div class="big">{{ restore_info.excel_name }}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Fotos de socios</span>
+    <div class="big">{{ restore_info.photo_count }}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Modo recuperado</span>
+    <div class="big">{% if restore_info.modo_recuperado %}Sí{% else %}No{% endif %}</div>
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Subir respaldo</h3>
+  <div class="report-highlight-grid" style="margin-bottom:16px;">
+    <div class="card" style="border-left:4px solid #1d4ed8;background:#eff6ff;">
+      <strong>Solo base de datos</strong>
+      <div class="small-note">No modifica Excel ni fotos de socios.</div>
+    </div>
+    <div class="card" style="border-left:4px solid #b45309;background:#fff7ed;">
+      <strong>Completo</strong>
+      <div class="small-note">Reemplaza base, fotos y Excel si vienen dentro del respaldo.</div>
+    </div>
+  </div>
+  <p class="small-note">El archivo debe ser un ZIP generado por la opción <strong>Descargar respaldo</strong>. Puedes restaurar solo la base activa o hacer una restauración completa con fotos y Excel.</p>
+  <p class="small-note">Antes de reemplazar la base o el Excel, la app guarda una copia de seguridad automática con sufijo <code>.before_restore_YYYYMMDD_HHMMSS.bak</code>.</p>
+
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    <label>
+      <span>Archivo de respaldo ZIP</span>
+      <input type="file" name="backup_file" accept=".zip" required>
+    </label>
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+      <button class="btn restore-btn restore-btn-db" type="submit" name="restore_mode" value="database_only">Solo base (no toca Excel)</button>
+      <button class="btn restore-btn restore-btn-full" type="submit" name="restore_mode" value="full">Completo (reemplaza todo)</button>
+    </div>
+  </form>
+</div>
+
+<div class="card section">
+  <h3>Qué restaura este módulo</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Modo</th>
+        <th>Componentes</th>
+        <th>Comportamiento</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Solo base de datos</td>
+        <td>Base activa</td>
+        <td>Se reemplaza únicamente la base de datos incluida en el ZIP. No toca Excel ni fotos.</td>
+      </tr>
+      <tr>
+        <td>Completo</td>
+        <td>Base activa + fotos + Excel</td>
+        <td>Restaura la base activa y, si el respaldo los contiene, también las fotos de socios y el Excel activo.</td>
+      </tr>
+      <tr>
+        <td>Siempre</td>
+        <td>Copias previas</td>
+        <td>La app guarda una copia previa de seguridad antes de reemplazar la base o el Excel.</td>
+      </tr>
+      <tr>
+        <td>Siempre</td>
+        <td>Metadatos</td>
+        <td>La app actualiza la referencia visible del Excel sincronizado después de la restauración.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

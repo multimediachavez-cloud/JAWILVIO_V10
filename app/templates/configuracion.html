@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Configuración institucional</h2>
+<div class="card">
+  <p class="small-note">Actualiza aquí los datos base de la asociación y los montos que usa el sistema en sus cálculos mensuales.</p>
+  <form method="post" class="form-inline">
+    <div><label>Nombre de la asociación</label><input type="text" name="nombre_asociacion" value="{{ cfg.get('nombre_asociacion','') }}" placeholder="Escribe el nombre institucional" required></div>
+    <div><label>Ubicación</label><input type="text" name="ubicacion" value="{{ cfg.get('ubicacion','') }}" placeholder="Ciudad, provincia o referencia"></div>
+    <div><label>Aporte mensual</label><input type="text" name="aporte_mensual" value="{{ cfg.get('aporte_mensual','150') }}" placeholder="Monto mensual por socio"></div>
+    <div><label>Saldo actual total oficial</label><input type="text" name="saldo_actual_total_oficial" value="{{ cfg.get('saldo_actual_total_oficial','887838.9') }}" placeholder="Saldo actual total oficial de la cartera"></div>
+    <div><label>Total de préstamo acumulado oficial</label><input type="text" name="total_prestamo_acumulado_oficial" value="{{ cfg.get('total_prestamo_acumulado_oficial','1444072.7') }}" placeholder="Monto oficial acumulado de préstamos"></div>
+    <div><label>Multa por inasistencia</label><input type="text" name="multa_inasistencia" value="{{ cfg.get('multa_inasistencia','10') }}" placeholder="Monto de multa por inasistencia"></div>
+    <div><label>Multa por tardanza</label><input type="text" name="multa_tardanza" value="{{ cfg.get('multa_tardanza','5') }}" placeholder="Monto de multa por tardanza"></div>
+    <div style="grid-column:1/-1"><button class="btn" type="submit">Guardar configuración</button></div>
+  </form>
+</div>
+{% endblock %}

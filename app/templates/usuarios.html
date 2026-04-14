@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Seguridad</div>
+    <h2>Gestión de usuarios</h2>
+    <p class="module-subtitle">Administra accesos, restablece contraseñas y controla qué usuarios están activos en el sistema.</p>
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Crear usuario</h3>
+  <p class="small-note">Registra un nuevo usuario con su rol. El usuario se crea activo y podrá cambiar su contraseña desde su cuenta.</p>
+  <form method="post" class="form-inline">
+    <input type="hidden" name="action" value="create_user">
+    <div><label>Usuario</label><input type="text" name="username" placeholder="Escribe el nombre de usuario" required></div>
+    <div><label>Contraseña inicial</label><input type="text" name="password" placeholder="Escribe la contraseña inicial" required></div>
+    <div><label>Rol</label>
+      <select name="role" required>
+        <option>Administrador</option>
+        <option>Tesorero</option>
+        <option>Secretario</option>
+        <option>Consulta</option>
+      </select>
+    </div>
+    <div style="grid-column:1/-1"><button class="btn" type="submit">Guardar usuario</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Usuarios del sistema</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Rol</th>
+        <th>Estado</th>
+        <th>Creado</th>
+        <th>Último acceso</th>
+        <th>Restablecer contraseña</th>
+        <th>Acción</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{{ u.role }}</td>
+        <td>{{ u.estado }}</td>
+        <td>{{ u.creado_en or '-' }}</td>
+        <td>{{ u.ultimo_acceso or 'Sin ingreso todavía' }}</td>
+        <td>
+          <form method="post" class="search" style="margin-bottom:0;align-items:center">
+            <input type="hidden" name="action" value="reset_password">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <input type="text" name="new_password" placeholder="Nueva contraseña" required>
+            <button class="btn secondary" type="submit">Restablecer</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" style="margin-bottom:0">
+            <input type="hidden" name="action" value="toggle_status">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <button class="btn {% if u.estado == 'Suspendido' %}{% else %}secondary{% endif %}" type="submit">
+              {% if u.estado == 'Suspendido' %}Activar{% else %}Suspender{% endif %}
+            </button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

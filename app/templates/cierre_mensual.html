@@ -1,0 +1,196 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Cierre financiero</div>
+    <h2>Cierre mensual</h2>
+    <p class="module-subtitle">Consolida lo recaudado en el período, el fondo ya colocado y el saldo pendiente por distribuir según la lógica de la asociación.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.nuevos_prestamos', periodo=periodo) }}">Abrir nuevos préstamos</a>
+    <a class="btn secondary" href="{{ url_for('main.aportaciones_mensuales', periodo=periodo) }}">Abrir aportaciones</a>
+  </div>
+</div>
+<div class="card">
+  <form method="get" class="search">
+    <input type="text" name="periodo" value="{{ periodo }}" placeholder="Período en formato YYYY-MM">
+    <button class="btn">Actualizar cierre</button>
+  <a class="btn secondary" href="{{ url_for('main.aportaciones_mensuales', periodo=periodo) }}">Abrir detalle por socio</a>
+  </form>
+</div>
+
+{% if es_periodo_historico_oficial %}
+<div class="card section historico-oficial-banner">
+  <div class="historico-oficial-topline">
+    <span class="historico-pill">Bloqueado</span>
+    <strong>Período histórico oficial</strong>
+  </div>
+  <p>
+    {{ periodo }} se conserva como corte histórico oficial de la asociación. Este cierre queda fijo como referencia validada y no se recalcula igual que los períodos operativos posteriores.
+  </p>
+  <div class="small-note">El cierre mensual automático se aplica desde {{ siguiente_periodo_operativo }} en adelante.</div>
+</div>
+{% endif %}
+
+{% if can_access('main.cierre_mensual', True) %}
+<div class="card section">
+  <div class="search" style="align-items:center;justify-content:space-between">
+    <div>
+      <strong>Control del período</strong>
+      <div class="small-note">Puedes abrir el siguiente mes desde la app y cerrar este período cuando el fondo ya esté completamente colocado.</div>
+    </div>
+    <div class="search" style="margin-bottom:0">
+      <form method="post" style="display:inline-block">
+        <input type="hidden" name="periodo" value="{{ periodo }}">
+        <input type="hidden" name="action" value="abrir_mes_nuevo">
+        <button class="btn">Abrir mes nuevo</button>
+      </form>
+      <form method="post" style="display:inline-block">
+        <input type="hidden" name="periodo" value="{{ periodo }}">
+        <input type="hidden" name="action" value="cerrar_periodo">
+        <button class="btn secondary">Cerrar período</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="kpi-grid section">
+  <div class="kpi-box"><div class="label">Período</div><div class="value">{{ periodo }}</div></div>
+  <div class="kpi-box"><div class="label">Estado del período</div><div class="value">{{ cierre.estado or 'Abierto' }}</div></div>
+  <div class="kpi-box"><div class="label">Socios considerados</div><div class="value">{{ cierre.total_socios or 0 }}</div></div>
+  <div class="kpi-box"><div class="label">Cuotas de préstamo</div><div class="value">S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Aportes mensuales</div><div class="value">S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Total recaudado</div><div class="value">S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Total colocado</div><div class="value">S/ {{ '%.1f'|format(total_colocado or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Saldo por colocar</div><div class="value">S/ {{ '%.1f'|format(saldo_por_colocar or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Intereses del mes</div><div class="value">S/ {{ '%.1f'|format(cierre.total_intereses or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Capital recuperado</div><div class="value">S/ {{ '%.1f'|format(cierre.total_capital or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Fondo mensual a représtamo</div><div class="value">S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</div></div>
+</div>
+
+<div class="card section">
+  <p class="small-note">El fondo del mes se calcula con las cuotas reales del período + aportes mensuales.</p>
+</div>
+
+<div class="grid section">
+  <div class="card {% if (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 40 and (cierre.total_recaudado or 0) > 0 %}summary-card-level-low{% elif (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 80 and (cierre.total_recaudado or 0) > 0 %}summary-card-level-medium{% else %}summary-card-level-high{% endif %}">
+    <h3>Porcentaje colocado del fondo</h3>
+    <div class="big">
+      {{ '%.1f'|format((((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) if (cierre.total_recaudado or 0) > 0 else 0) }}%
+      <span class="progress-level-chip {% if (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 40 and (cierre.total_recaudado or 0) > 0 %}level-low{% elif (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 80 and (cierre.total_recaudado or 0) > 0 %}level-medium{% else %}level-high{% endif %}">
+        {% if (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 40 and (cierre.total_recaudado or 0) > 0 %}Bajo{% elif (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 80 and (cierre.total_recaudado or 0) > 0 %}Medio{% else %}Alto{% endif %}
+      </span>
+    </div>
+    <div class="summary-progress">
+      <div class="summary-progress-track">
+        <div class="summary-progress-fill {% if (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 40 and (cierre.total_recaudado or 0) > 0 %}level-low{% elif (((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) < 80 and (cierre.total_recaudado or 0) > 0 %}level-medium{% else %}level-high{% endif %}" style="width: {{ '%.1f'|format((((total_colocado or 0) / ((cierre.total_recaudado or 1))) * 100) if (cierre.total_recaudado or 0) > 0 else 0) }}%"></div>
+      </div>
+      <div class="small-note">Avance visual del fondo mensual ya distribuido en préstamos.</div>
+    </div>
+  </div>
+  <div class="card {% if (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.6) %}summary-card-level-low{% elif (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.2) %}summary-card-level-medium{% else %}summary-card-level-high{% endif %}">
+    <h3>Saldo pendiente por colocar</h3>
+    <div class="big">
+      S/ {{ '%.1f'|format(saldo_por_colocar or 0) }}
+      <span class="progress-level-chip {% if (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.6) %}level-low{% elif (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.2) %}level-medium{% else %}level-high{% endif %}">
+        {% if (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.6) %}Alto{% elif (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.2) %}Medio{% else %}Bajo{% endif %}
+      </span>
+    </div>
+    <div class="summary-progress">
+      <div class="summary-progress-track">
+        <div class="summary-progress-fill {% if (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.6) %}level-low{% elif (saldo_por_colocar or 0) > ((cierre.total_recaudado or 0) * 0.2) %}level-medium{% else %}level-high{% endif %}" style="width: {{ '%.1f'|format((((saldo_por_colocar or 0) / ((cierre.total_recaudado or 1))) * 100) if (cierre.total_recaudado or 0) > 0 else 0) }}%"></div>
+      </div>
+      <div class="small-note">Remanente visual del fondo que todavía falta distribuir.</div>
+    </div>
+  </div>
+</div>
+
+<div class="card section">
+  <div class="small-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <strong>Leyenda:</strong>
+    <span class="progress-level-chip level-low" style="margin-left:0">Alto</span>
+    <span>falta mucho por distribuir</span>
+    <span class="progress-level-chip level-medium" style="margin-left:0">Medio</span>
+    <span>la cobertura está en proceso</span>
+    <span class="progress-level-chip level-high" style="margin-left:0">Bajo</span>
+    <span>la sugerencia ya cubre casi todo</span>
+  </div>
+</div>
+
+<div class="card section {% if colocacion_completa %}compare-summary summary-ok{% else %}compare-summary summary-danger{% endif %}">
+  {% if colocacion_completa %}
+    <strong>Estado de colocación:</strong> completo. Todo el fondo mensual ya fue prestado.
+  {% else %}
+    <strong>Estado de colocación:</strong> pendiente. Faltan S/ {{ '%.1f'|format(saldo_por_colocar or 0) }} por prestar para cumplir la lógica de la asociación.
+    <div style="margin-top:8px"><a class="btn" href="{{ url_for('main.nuevos_prestamos', periodo=periodo) }}">Ir a distribuir el fondo</a></div>
+  {% endif %}
+  {% if colocacion_fuente in ['excel_activo', 'mixto'] and colocacion_excel_rows %}
+    <div class="small-note" style="margin-top:8px">
+      Detección automática desde Excel:
+      {% for row in colocacion_excel_rows %}
+        {{ row.socio_numero }} - {{ row.socio_nombre }}{% if not loop.last %}, {% endif %}
+      {% endfor %}
+    </div>
+    <div style="margin-top:12px">
+      <table>
+        <caption>Socios detectados por colocación automática del período</caption>
+        <thead><tr><th>Socio</th><th>Fecha de inicio</th><th>Monto inicial</th><th>Cuotas</th><th>Origen</th></tr></thead>
+        <tbody>
+        {% for row in colocacion_detalle_rows %}
+          <tr>
+            <td>{{ row.socio_numero }} - {{ row.socio_nombre }}</td>
+            <td>{{ row.fecha_inicio or '-' }}</td>
+            <td>{% if row.monto_inicial is not none %}S/ {{ '%.1f'|format(row.monto_inicial) }}{% else %}-{% endif %}</td>
+            <td>{{ row.plazo_total or 0 }}</td>
+            <td>
+              <span class="origin-chip {% if row.origen == 'Excel' %}excel{% elif row.origen == 'App (Aprobado)' %}app-approved{% elif row.origen == 'App (Reservado)' %}app-reserved{% endif %}">
+                {{ row.origen }}
+              </span>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="small-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <strong>Conteo por origen:</strong>
+        <span class="origin-chip excel">Excel: {{ colocacion_origin_counts.excel }}</span>
+        <span class="origin-chip app-approved">App (Aprobado): {{ colocacion_origin_counts.app_aprobado }}</span>
+        <span class="origin-chip app-reserved">App (Reservado): {{ colocacion_origin_counts.app_reservado }}</span>
+      </div>
+      <div class="small-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <strong>Leyenda de origen:</strong>
+        <span class="origin-chip excel">Excel</span>
+        <span>detectado automáticamente desde la hoja activa del período</span>
+        <span class="origin-chip app-approved">App (Aprobado)</span>
+        <span>registrado y aprobado dentro de la app</span>
+        <span class="origin-chip app-reserved">App (Reservado)</span>
+        <span>registrado en la app y pendiente de aprobación</span>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="section card">
+  <p class="small-note">Este cierre resume lo cobrado en el período: cuota mensual de préstamo, aporte fijo de S/ {{ '%.1f'|format(cierre.aporte_mensual_base or 0) }} por socio, intereses y capital recuperado. Con la lógica de la asociación, todo ese fondo mensual debe colocarse nuevamente en uno o varios préstamos dentro del mismo período.</p>
+  <table>
+    <caption>Historial de cierres mensuales</caption>
+    <thead><tr><th>Período</th><th>Socios</th><th>Préstamos</th><th>Aportes</th><th>Total</th><th>Intereses</th><th>Capital</th><th>Calculado</th></tr></thead>
+    <tbody>
+    {% for row in historico %}
+      <tr {% if row.periodo == periodo %}class="prestamo-total"{% endif %}>
+        <td>{{ row.periodo }}</td>
+        <td>{{ row.total_socios }}</td>
+        <td>S/ {{ '%.1f'|format(row.total_prestamos or 0) }}</td>
+        <td>S/ {{ '%.1f'|format(row.total_aportes or 0) }}</td>
+        <td>S/ {{ '%.1f'|format(row.total_recaudado or 0) }}</td>
+        <td>S/ {{ '%.1f'|format(row.total_intereses or 0) }}</td>
+        <td>S/ {{ '%.1f'|format(row.total_capital or 0) }}</td>
+        <td>{{ row.fecha_calculo }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+

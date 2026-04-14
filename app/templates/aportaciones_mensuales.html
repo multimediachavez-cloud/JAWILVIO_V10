@@ -1,0 +1,135 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Recaudación del período</div>
+    <h2>Aportaciones mensuales</h2>
+    <p class="module-subtitle">Revisa cuánto aporta cada socio en el mes y cómo se compone el total entre cuota de préstamo y aporte fijo.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn secondary" href="{{ url_for('main.aportaciones_mensuales_imprimible', periodo=periodo) }}" target="_blank" rel="noopener">Imprimir detalle mensual</a>
+    <a class="btn" href="{{ url_for('main.cierre_mensual', periodo=periodo) }}">Abrir cierre mensual</a>
+  </div>
+</div>
+<div class="card">
+  <form method="get" class="search" autocomplete="off">
+    <select id="periodo-select" name="periodo" data-periodo-actual="{{ periodo }}" onchange="this.form.submit()" style="flex:1;padding:11px 12px;border:1px solid #d6dfec;border-radius:10px">
+      {% for p in periodos %}
+        <option value="{{ p.periodo }}" {% if p.periodo == periodo %}selected{% endif %}>{{ p.periodo }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn">Actualizar período</button>
+  </form>
+</div>
+
+<div class="card section">
+  <p class="small-note">Mostrando el período <strong>{{ periodo }}</strong>. Si cambias el selector, la pantalla se actualiza automáticamente con ese mes.</p>
+</div>
+
+{% if es_periodo_historico_oficial %}
+<div class="card section historico-oficial-banner">
+  <div class="historico-oficial-topline">
+    <span class="historico-pill">Bloqueado</span>
+    <strong>Período histórico oficial</strong>
+  </div>
+  <p>
+    {{ periodo }} se conserva como corte histórico oficial de la asociación. Este mes queda fijo como referencia validada y no se recalcula con la misma lógica operativa que usamos desde {{ siguiente_periodo_operativo }} en adelante.
+  </p>
+  <div class="small-note">Por eso marzo se mantiene como cierre oficial y abril en adelante trabaja como período mensual operativo.</div>
+</div>
+{% endif %}
+
+<div class="grid section">
+  <div class="card"><h3>Período</h3><div class="big">{{ periodo }}</div></div>
+  <div class="card"><h3>Total de préstamos</h3><div class="big">S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</div></div>
+  <div class="card"><h3>Total aportes</h3><div class="big">S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</div></div>
+  <div class="card"><h3>Total mensual</h3><div class="big">S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</div></div>
+  <div class="card"><h3>Socios con aporte</h3><div class="big">{{ resumen_aportaciones.socios_con_aporte }}</div></div>
+  <div class="card"><h3>Promedio por socio</h3><div class="big">S/ {{ '%.1f'|format(resumen_aportaciones.promedio_total_socio or 0) }}</div></div>
+</div>
+
+<div class="grid section">
+  <div class="card {% if (resumen_aportaciones.porcentaje_prestamo or 0) < 40 %}summary-card-level-low{% elif (resumen_aportaciones.porcentaje_prestamo or 0) < 80 %}summary-card-level-medium{% else %}summary-card-level-high{% endif %}">
+    <h3>Peso del préstamo en el total</h3>
+    <div class="big">
+      {{ '%.1f'|format(resumen_aportaciones.porcentaje_prestamo or 0) }}%
+      <span class="progress-level-chip {% if (resumen_aportaciones.porcentaje_prestamo or 0) < 40 %}level-low{% elif (resumen_aportaciones.porcentaje_prestamo or 0) < 80 %}level-medium{% else %}level-high{% endif %}">
+        {% if (resumen_aportaciones.porcentaje_prestamo or 0) < 40 %}Bajo{% elif (resumen_aportaciones.porcentaje_prestamo or 0) < 80 %}Medio{% else %}Alto{% endif %}
+      </span>
+    </div>
+    <div class="summary-progress">
+      <div class="summary-progress-track">
+        <div class="summary-progress-fill {% if (resumen_aportaciones.porcentaje_prestamo or 0) < 40 %}level-low{% elif (resumen_aportaciones.porcentaje_prestamo or 0) < 80 %}level-medium{% else %}level-high{% endif %}" style="width: {{ '%.1f'|format(resumen_aportaciones.porcentaje_prestamo or 0) }}%"></div>
+      </div>
+      <div class="small-note">Proporción del total mensual explicada por las cuotas de préstamo.</div>
+    </div>
+  </div>
+  <div class="card {% if (resumen_aportaciones.porcentaje_aporte or 0) < 40 %}summary-card-level-low{% elif (resumen_aportaciones.porcentaje_aporte or 0) < 80 %}summary-card-level-medium{% else %}summary-card-level-high{% endif %}">
+    <h3>Peso del aporte en el total</h3>
+    <div class="big">
+      {{ '%.1f'|format(resumen_aportaciones.porcentaje_aporte or 0) }}%
+      <span class="progress-level-chip {% if (resumen_aportaciones.porcentaje_aporte or 0) < 40 %}level-low{% elif (resumen_aportaciones.porcentaje_aporte or 0) < 80 %}level-medium{% else %}level-high{% endif %}">
+        {% if (resumen_aportaciones.porcentaje_aporte or 0) < 40 %}Bajo{% elif (resumen_aportaciones.porcentaje_aporte or 0) < 80 %}Medio{% else %}Alto{% endif %}
+      </span>
+    </div>
+    <div class="summary-progress">
+      <div class="summary-progress-track">
+        <div class="summary-progress-fill {% if (resumen_aportaciones.porcentaje_aporte or 0) < 40 %}level-low{% elif (resumen_aportaciones.porcentaje_aporte or 0) < 80 %}level-medium{% else %}level-high{% endif %}" style="width: {{ '%.1f'|format(resumen_aportaciones.porcentaje_aporte or 0) }}%"></div>
+      </div>
+      <div class="small-note">Proporción del total mensual explicada por el aporte fijo de los socios.</div>
+    </div>
+  </div>
+</div>
+
+<div class="card section">
+  <div class="small-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <strong>Leyenda:</strong>
+    <span class="progress-level-chip level-low" style="margin-left:0">Bajo</span>
+    <span>participación menor dentro del total del mes</span>
+    <span class="progress-level-chip level-medium" style="margin-left:0">Medio</span>
+    <span>participación intermedia dentro del total</span>
+    <span class="progress-level-chip level-high" style="margin-left:0">Alto</span>
+    <span>participación fuerte dentro del total mensual</span>
+  </div>
+</div>
+
+<div class="section card">
+  <p class="small-note">Cada socio aporta S/ {{ '%.1f'|format(resumen_aportaciones.aporte_base or 0) }} al mes. El sistema suma automáticamente cuota de préstamo + aporte mensual para formar el total del mes.</p>
+  <table class="table-uniform-white">
+    <caption>Detalle mensual por socio</caption>
+    <thead><tr><th>N°</th><th>Apellidos y nombres</th><th>Cuotas</th><th>Fecha</th><th>Cuota de préstamo</th><th>Aportación</th><th>Total</th></tr></thead>
+    <tbody>
+    {% for f in filas %}
+      <tr>
+        <td>{{ f.socio_numero }}</td>
+        <td>{{ f.socio_nombre }}</td>
+        <td>{{ f.cuotas or 0 }} cuotas</td>
+        <td>{{ f.fecha_prestamo or '-' }}</td>
+        <td>S/ {{ '%.1f'|format(f.cuota_prestamo or 0) }}</td>
+        <td>S/ {{ '%.1f'|format(f.aporte_mensual or 0) }}</td>
+        <td>S/ {{ '%.1f'|format(f.total_mes or 0) }}</td>
+      </tr>
+    {% endfor %}
+      <tr class="prestamo-total">
+        <td colspan="4"><strong>{{ periodo }} - TOTAL</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const select = document.getElementById('periodo-select');
+    if (!select) return;
+    const periodoActual = select.dataset.periodoActual || '';
+    if (periodoActual && select.value !== periodoActual) {
+      select.value = periodoActual;
+    }
+  });
+</script>
+{% endblock %}
+
+

@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Resumen financiero</div>
+    <h2>Fondo total de la asociación</h2>
+    <p class="module-subtitle">Compara el corte financiero oficial con el seguimiento del período actual para que la directiva vea la misma lógica que usamos en el panel de control.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.dashboard') }}">Abrir panel de control</a>
+    <a class="btn secondary" href="{{ url_for('main.reporte_mensual_csv') }}">Descargar resumen mensual CSV</a>
+  </div>
+</div>
+
+<div class="card section compare-summary summary-ok">
+  <strong>Corte financiero oficial {{ periodo_financiero }}:</strong>
+  saldo actual total y acciones por socio tomados del último período colocado o cerrado.
+  <div class="small-note" style="margin-top:6px">
+    Período actual en seguimiento: {{ periodo_actual }} |
+    Estado: {{ periodo_vigente.estado if periodo_vigente else 'Abierto' }}
+  </div>
+</div>
+
+<div class="dashboard-group section">
+  <div class="dashboard-group-head">
+    <div class="module-eyebrow">Corte oficial</div>
+    <h3>Base financiera de la asociación</h3>
+    <p class="small-note">Estos valores deben coincidir con el panel de control y con el corte financiero oficial que ya aprobaste.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Saldo actual total</h3><div class="big">S/ {{ '%.1f'|format(snapshot_financiero.saldo_actual_total or 0) }}</div></div>
+    <div class="card"><h3>Acciones por socio</h3><div class="big">S/ {{ '%.1f'|format(snapshot_financiero.acciones_por_socio or 0) }}</div></div>
+    <div class="card"><h3>Total de préstamo acumulado</h3><div class="big">S/ {{ '%.1f'|format(total_prestamo_acumulado or 0) }}</div></div>
+    <div class="card"><h3>Socios del corte</h3><div class="big">{{ snapshot_financiero.total_socios or 0 }}</div></div>
+    <div class="card"><h3>Cartera vigente</h3><div class="big">{{ '%.1f'|format(cartera_vigente_pct or 0) }}%</div></div>
+    <div class="card">
+      <h3>Mayor saldo del período actual</h3>
+      <div class="big">{% if mayor_saldo %}S/ {{ '%.1f'|format(mayor_saldo.saldo_actual or 0) }}{% else %}S/ 0.0{% endif %}</div>
+      <div class="small-note" style="margin-top:6px">{% if mayor_saldo %}{{ mayor_saldo.numero }} - {{ mayor_saldo.nombre }}{% else %}Sin registros{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-group section">
+  <div class="dashboard-group-head">
+    <div class="module-eyebrow">Período actual</div>
+    <h3>Seguimiento del fondo del mes</h3>
+    <p class="small-note">Aquí ves el estado operativo del mes abierto con la misma lógica de aportaciones, cierre y nuevos préstamos.</p>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Período actual</h3><div class="big">{{ periodo_actual }}</div></div>
+    <div class="card"><h3>Estado del período</h3><div class="big">{{ periodo_vigente.estado if periodo_vigente else 'Abierto' }}</div></div>
+    <div class="card"><h3>Cuotas del mes</h3><div class="big">S/ {{ '%.1f'|format(periodo_vigente.total_prestamos if periodo_vigente else 0) }}</div></div>
+    <div class="card"><h3>Aportes fijos</h3><div class="big">S/ {{ '%.1f'|format(periodo_vigente.total_aportes if periodo_vigente else 0) }}</div></div>
+    <div class="card"><h3>Total mensual</h3><div class="big">S/ {{ '%.1f'|format(periodo_vigente.total_recaudado if periodo_vigente else 0) }}</div></div>
+    <div class="card"><h3>Ya colocado</h3><div class="big">S/ {{ '%.1f'|format(colocacion_vigente.total_colocado if colocacion_vigente else 0) }}</div></div>
+    <div class="card"><h3>Saldo por colocar</h3><div class="big">S/ {{ '%.1f'|format(colocacion_vigente.saldo_por_colocar if colocacion_vigente else 0) }}</div></div>
+    <div class="card"><h3>Avance de colocación</h3><div class="big">{{ '%.1f'|format(colocacion_pct or 0) }}%</div></div>
+  </div>
+</div>
+
+<div class="two-col section">
+  <div class="card">
+    <h3>Interpretación rápida</h3>
+    <p><strong>Saldo actual total</strong> y <strong>acciones por socio</strong> salen del último cierre financiero oficial. Por eso esta parte debe coincidir con el panel de control.</p>
+    <p><strong>Total mensual</strong>, <strong>ya colocado</strong> y <strong>saldo por colocar</strong> salen del período actual abierto. Esa parte cambia mes a mes según el ciclo mensual de la asociación.</p>
+  </div>
+  <div class="card">
+    <h3>Historial reciente de períodos</h3>
+    <table>
+      <thead><tr><th>Período</th><th>Estado</th><th>Total mensual</th><th>Ya colocado</th><th>Saldo por colocar</th></tr></thead>
+      <tbody>
+      {% for r in historial_periodos %}
+        <tr {% if r.periodo == periodo_actual %}class="prestamo-total"{% endif %}>
+          <td>{{ r.periodo }}</td>
+          <td>{{ r.estado }}</td>
+          <td>S/ {{ '%.1f'|format(r.total_recaudado or 0) }}</td>
+          <td>S/ {{ '%.1f'|format(r.total_colocado or 0) }}</td>
+          <td>S/ {{ '%.1f'|format(r.saldo_por_colocar or 0) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5">Todavía no hay períodos registrados.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

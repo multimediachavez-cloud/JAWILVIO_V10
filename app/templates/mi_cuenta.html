@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Perfil</div>
+    <h2>Mi cuenta</h2>
+    <p class="module-subtitle">Consulta el estado de tu usuario y actualiza tu contraseña de acceso cuando lo necesites.</p>
+  </div>
+</div>
+
+<div class="grid section">
+  <div class="card">
+    <h3>Resumen de usuario</h3>
+    <div class="metric"><span>Usuario</span><strong>{{ user.username }}</strong></div>
+    <div class="metric"><span>Rol</span><strong>{{ user.role }}</strong></div>
+    <div class="metric"><span>Estado</span><strong>{{ user.estado }}</strong></div>
+    <div class="metric"><span>Creado</span><strong>{{ user.creado_en or '-' }}</strong></div>
+    <div class="metric"><span>Último acceso</span><strong>{{ user.ultimo_acceso or 'Sin registro' }}</strong></div>
+  </div>
+  <div class="card">
+    <h3>Cambiar contraseña</h3>
+    <form method="post">
+      <div style="margin-bottom:12px">
+        <label>Contraseña actual</label>
+        <input type="password" name="current_password" placeholder="Escribe tu contraseña actual" required>
+      </div>
+      <div style="margin-bottom:12px">
+        <label>Nueva contraseña</label>
+        <input type="password" name="new_password" placeholder="Escribe la nueva contraseña" required>
+      </div>
+      <div style="margin-bottom:12px">
+        <label>Confirmar nueva contraseña</label>
+        <input type="password" name="confirm_password" placeholder="Repite la nueva contraseña" required>
+      </div>
+      <button class="btn" type="submit">Actualizar contraseña</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

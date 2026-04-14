@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Control de asistencia</h2>
+<div class="card section">
+  <p class="small-note">Selecciona el socio, la fecha y el estado de asistencia. La observación es opcional y sirve para dejar contexto adicional.</p>
+  {% if can_access('main.asistencia', True) %}
+  <form method="post" class="form-inline">
+    <div>
+      <label>Socio</label>
+      <select name="socio_numero" required>
+        {% for s in socios %}
+          <option value="{{ s.numero }}">{{ s.numero }} - {{ s.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Fecha</label>
+      <input type="date" name="fecha" value="{{ hoy }}" required>
+    </div>
+    <div>
+      <label>Estado</label>
+      <select name="estado" required>
+        <option>Asistió</option>
+        <option>Faltó</option>
+        <option>Tardanza</option>
+        <option>Permiso</option>
+      </select>
+    </div>
+    <div style="grid-column:1/-1">
+      <label>Observación</label>
+      <input type="text" name="observacion" placeholder="Escribe una observación si hace falta">
+    </div>
+    <div style="grid-column:1/-1">
+      <button class="btn" type="submit">Registrar asistencia</button>
+    </div>
+  </form>
+  {% else %}
+  <div class="small-note">Tu rol puede revisar la asistencia, pero no registrar cambios.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>Últimos registros</h3>
+  <table>
+    <thead><tr><th>Fecha</th><th>Socio</th><th>Estado</th><th>Observación</th></tr></thead>
+    <tbody>
+    {% for r in registros %}
+      <tr>
+        <td>{{ r.fecha }}</td>
+        <td>{{ r.socio_nombre }}</td>
+        <td>{{ r.estado }}</td>
+        <td>{{ r.observacion }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

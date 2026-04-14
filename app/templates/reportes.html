@@ -1,0 +1,188 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="dashboard-shell">
+  <div class="module-header">
+    <div>
+      <div class="module-eyebrow">An&aacute;lisis y exportaci&oacute;n</div>
+      <h2>Reportes consolidados</h2>
+      <p class="module-subtitle">Explora saldos, res&uacute;menes mensuales y trazabilidad hist&oacute;rica en una vista m&aacute;s clara y ejecutiva.</p>
+    </div>
+    <div class="module-actions">
+      <a class="btn" href="{{ url_for('main.reporte_imprimible') }}" target="_blank">Abrir reporte imprimible</a>
+      <a class="btn secondary" href="{{ url_for('main.saldo_actual') }}">Abrir saldo actual</a>
+    </div>
+  </div>
+
+  <div class="dashboard-hero dashboard-hero-ok">
+    <div class="dashboard-hero-copy">
+      <div class="module-eyebrow">Resumen general</div>
+      <h3>Lectura consolidada de la cartera</h3>
+      <p>Este m&oacute;dulo re&uacute;ne los saldos vigentes, la evoluci&oacute;n mensual del cronograma y el control de socios con m&uacute;ltiples pr&eacute;stamos hist&oacute;ricos.</p>
+    </div>
+    <div class="dashboard-hero-metrics">
+      <div class="hero-chip">
+        <span>Total socios</span>
+        <strong>{{ resumen.socios or 0 }}</strong>
+      </div>
+      <div class="hero-chip">
+        <span>Saldo total</span>
+        <strong>S/ {{ '%.1f'|format(resumen.saldo_total or 0) }}</strong>
+      </div>
+      <div class="hero-chip">
+        <span>Saldo promedio</span>
+        <strong>S/ {{ '%.1f'|format(resumen.saldo_promedio or 0) }}</strong>
+      </div>
+      <div class="hero-chip">
+        <span>Saldo m&aacute;ximo</span>
+        <strong>S/ {{ '%.1f'|format(resumen.saldo_max or 0) }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Acciones r&aacute;pidas</div>
+      <h3>Exportaci&oacute;n y acceso directo</h3>
+      <p class="small-note">Atajos para exportar o abrir vistas espec&iacute;ficas del m&oacute;dulo de reportes.</p>
+    </div>
+    <div class="dashboard-metric-grid dashboard-metric-grid-secondary">
+      <div class="dashboard-metric-card compact">
+        <span class="label">Morosidad registrada</span>
+        <div class="big">{{ morosos|length }}</div>
+        <div class="small-note">Actualmente no hay socios morosos registrados.</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Socios con m&uacute;ltiples pr&eacute;stamos</span>
+        <div class="big">{{ resumen_prestamos_multiples.socios_multiples or 0 }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Socios con pr&eacute;stamo marzo 2026</span>
+        <div class="big">{{ resumen_prestamos_multiples.socios_marzo_2026 or 0 }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Exportaciones</span>
+        <div class="dashboard-links">
+          <a class="btn secondary" href="{{ url_for('main.reporte_morosos_csv') }}">Descargar morosidad CSV</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Saldos</div>
+      <h3>Cartera y morosidad</h3>
+      <p class="small-note">Consulta los saldos pendientes m&aacute;s altos y confirma el estado actual de morosidad del sistema.</p>
+    </div>
+
+    <div class="dashboard-main-split">
+      <div class="card">
+        <h3>Top 10 saldos pendientes</h3>
+        <table>
+          <caption>Socios con mayor saldo pendiente</caption>
+          <thead><tr><th>Socio</th><th>Saldo</th><th>Cuotas</th><th>Fecha de pr&eacute;stamo</th></tr></thead>
+          <tbody>
+          {% for s in top %}
+            <tr>
+              <td>{{ s.nombre }}</td>
+              <td>S/ {{ '%.1f'|format(s.saldo_periodo or 0) }}</td>
+              <td>{{ s.plazo_real or 0 }}</td>
+              <td>{{ s.fecha_prestamo or '-' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4">No hay saldos pendientes registrados.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>Morosidad registrada</h3>
+        <table>
+          <caption>Socios morosos registrados en el sistema</caption>
+          <thead><tr><th>N&deg;</th><th>Socio</th><th>Cuotas vencidas</th><th>Saldo vencido</th></tr></thead>
+          <tbody>
+          {% for m in morosos %}
+            <tr>
+              <td>{{ m.numero }}</td>
+              <td>{{ m.nombre }}</td>
+              <td>{{ m.cuotas_vencidas }}</td>
+              <td>S/ {{ '%.2f'|format(m.saldo_vencido or 0) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4">No hay socios morosos registrados.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Proyecci&oacute;n</div>
+      <h3>Resumen mensual del cronograma</h3>
+      <p class="small-note">Vista agregada por per&iacute;odo para revisar c&oacute;mo se distribuyen intereses, capital y cuotas proyectadas.</p>
+    </div>
+    <div class="card">
+      <table>
+        <caption>Resumen mensual del cronograma</caption>
+        <thead><tr><th>Per&iacute;odo</th><th>Intereses</th><th>Capital</th><th>Cuotas proyectadas</th></tr></thead>
+        <tbody>
+        {% for r in mensual %}
+          <tr>
+            <td>{{ r.periodo }}</td>
+            <td>S/ {{ '%.2f'|format(r.intereses or 0) }}</td>
+            <td>S/ {{ '%.2f'|format(r.capital or 0) }}</td>
+            <td>S/ {{ '%.2f'|format(r.cuotas or 0) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">No hay informaci&oacute;n mensual disponible.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Trazabilidad</div>
+      <h3>Socios con m&uacute;ltiples pr&eacute;stamos hist&oacute;ricos</h3>
+      <p class="small-note">Control de socios que tuvieron m&aacute;s de un pr&eacute;stamo registrado en su hoja individual.</p>
+    </div>
+
+    <div class="dashboard-metric-grid dashboard-metric-grid-secondary">
+      <div class="dashboard-metric-card compact">
+        <span class="label">Socios con m&uacute;ltiples pr&eacute;stamos</span>
+        <div class="big">{{ resumen_prestamos_multiples.socios_multiples or 0 }}</div>
+      </div>
+      <div class="dashboard-metric-card compact">
+        <span class="label">Socios con pr&eacute;stamo marzo 2026</span>
+        <div class="big">{{ resumen_prestamos_multiples.socios_marzo_2026 or 0 }}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <table>
+        <caption>Control de socios con m&aacute;s de un pr&eacute;stamo hist&oacute;rico</caption>
+        <thead><tr><th>N&deg;</th><th>Socio</th><th>Total pr&eacute;stamos</th><th>Incluye marzo 2026</th><th>Pr&eacute;stamo activo del Excel</th><th>Fecha activa</th><th>Abrir</th></tr></thead>
+        <tbody>
+        {% for p in prestamos_multiples %}
+          <tr>
+            <td>{{ p.numero }}</td>
+            <td>{{ p.nombre }}</td>
+            <td>{{ p.total_prestamos }}</td>
+            <td>{% if p.tiene_marzo_2026 %}S&iacute;{% else %}No{% endif %}</td>
+            <td>{{ p.prestamo_activo or '-' }}</td>
+            <td>{{ p.fecha_prestamo_activo or '-' }}</td>
+            <td><a href="{{ url_for('main.socio_detalle', numero=p.numero) }}">Abrir detalle</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7">No se detectaron socios con m&uacute;ltiples pr&eacute;stamos hist&oacute;ricos.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,245 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Control operativo</div>
+    <h2>Reuniones y permisos</h2>
+    <p class="module-subtitle">Asigna la reunión del período, define el lugar, registra permisos y lleva el control mensual desde la app.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn secondary" href="{{ url_for('main.dashboard') }}">Abrir panel de control</a>
+  </div>
+</div>
+
+<div class="card section">
+  <form method="get" class="search">
+    <span class="small-note">Selecciona el período que quieres revisar o administrar.</span>
+    <select name="periodo" class="full-select" style="flex:1">
+      {% for p in periodos %}
+        <option value="{{ p.periodo }}" {% if p.periodo == periodo %}selected{% endif %}>{{ p.periodo }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn">Actualizar período</button>
+  </form>
+</div>
+
+<div class="grid section">
+  <div class="card">
+    <h3>Período</h3>
+    <div class="big">{{ periodo }}</div>
+  </div>
+  <div class="card">
+    <h3>Socio que le toca</h3>
+    <div class="big">{% if reunion_periodo %}{{ reunion_periodo.socio_numero }}{% else %}-{% endif %}</div>
+    <div class="small-note" style="margin-top:6px">{% if reunion_periodo %}{{ reunion_periodo.socio_nombre }}{% else %}Sin asignación del administrador{% endif %}</div>
+  </div>
+  <div class="card">
+    <h3>Estado de la reunión</h3>
+    <div class="big">{{ reunion_periodo.estado if reunion_periodo else 'Pendiente' }}</div>
+  </div>
+  <div class="card">
+    <h3>Permisos registrados</h3>
+    <div class="big">{{ permisos_registrados|length }}</div>
+  </div>
+  <div class="card">
+    <h3>Lugar de reunión</h3>
+    <div class="big" style="font-size:20px;">{{ lugar_reunion }}</div>
+    <div class="small-note" style="margin-top:6px">
+      {% if reunion_periodo and reunion_periodo.actualizado_por %}
+        Última actualización: {{ reunion_periodo.actualizado_por }}{% if reunion_periodo.actualizado_en %} · {{ reunion_periodo.actualizado_en }}{% endif %}
+      {% else %}
+        Sin actualización registrada todavía
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="two-col section">
+  <div class="card">
+    <h3>Reunión del período</h3>
+    <p class="small-note">El secretario o el administrador pueden guardar la reunión del período. El administrador puede volver a editarla cuando haga falta.</p>
+    {% if puede_editar %}
+    <form method="post" class="form-grid">
+      <input type="hidden" name="action" value="guardar_reunion">
+      <input type="hidden" name="periodo" value="{{ periodo }}">
+      <label>
+        <span class="small-note">Socio responsable</span>
+        <select name="socio_numero" class="full-select">
+          <option value="">Selecciona un socio</option>
+          {% for s in socios %}
+            <option value="{{ s.numero }}" {% if reunion_periodo and reunion_periodo.socio_numero == s.numero %}selected{% endif %}>{{ s.numero }} - {{ s.nombre }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span class="small-note">Estado</span>
+        <select name="estado" class="full-select">
+          {% set estado_actual = reunion_periodo.estado if reunion_periodo else 'Pendiente' %}
+          <option value="Pendiente" {% if estado_actual == 'Pendiente' %}selected{% endif %}>Pendiente</option>
+          <option value="Programada" {% if estado_actual == 'Programada' %}selected{% endif %}>Programada</option>
+          <option value="Realizada" {% if estado_actual == 'Realizada' %}selected{% endif %}>Realizada</option>
+        </select>
+      </label>
+      <label>
+        <span class="small-note">Fecha programada</span>
+        <input type="date" name="fecha_programada" value="{{ reunion_periodo.fecha_programada if reunion_periodo else (periodo ~ '-01') }}" class="full-select">
+      </label>
+      <label>
+        <span class="small-note">Fecha realizada</span>
+        <input type="date" name="fecha_realizada" value="{{ reunion_periodo.fecha_realizada if reunion_periodo else '' }}" class="full-select">
+      </label>
+      <label>
+        <span class="small-note">Tipo de vía</span>
+        <select name="tipo_via" class="full-select">
+          <option value="">Selecciona un tipo</option>
+          {% for abreviado, nombre in reunion_tipos_via %}
+            <option value="{{ abreviado }}" {% if reunion_periodo and reunion_periodo.tipo_via == abreviado %}selected{% endif %}>{{ abreviado }} ({{ nombre }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span class="small-note">Lugar de reunión</span>
+        <input type="text" name="direccion_reunion" value="{{ reunion_periodo.direccion_reunion if reunion_periodo else '' }}" placeholder="Ejemplo: Los Cedros 124" class="full-select">
+      </label>
+      <label style="grid-column:1 / -1">
+        <span class="small-note">Observación</span>
+        <input type="text" name="observacion" value="{{ reunion_periodo.observacion if reunion_periodo else '' }}" placeholder="Escribe una observación si hace falta" class="full-select">
+      </label>
+      <div style="grid-column:1 / -1">
+        <button class="btn">Guardar reunión del período</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="small-note">Tu rol puede consultar esta información, pero no editarla.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Permisos del período</h3>
+    <p class="small-note">Registra aquí las inasistencias o permisos para llevar la contabilidad mensual por socio.</p>
+    {% if puede_editar %}
+    <form method="post" class="form-grid" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="registrar_permiso">
+      <input type="hidden" name="periodo" value="{{ periodo }}">
+      <label>
+        <span class="small-note">Socio</span>
+        <select name="socio_numero" class="full-select">
+          {% for s in socios %}
+            <option value="{{ s.numero }}">{{ s.numero }} - {{ s.nombre }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span class="small-note">Fecha del permiso</span>
+        <input type="date" name="fecha_permiso" value="{{ periodo }}-01" class="full-select">
+      </label>
+      <label>
+        <span class="small-note">Motivo</span>
+        <select name="motivo" class="full-select">
+          {% for motivo in permiso_motivos %}
+            <option value="{{ motivo }}">{{ motivo }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span class="small-note">Documento de sustento</span>
+        <input type="file" name="documento_permiso" accept=".pdf,.doc,.docx" class="full-select">
+      </label>
+      <label style="grid-column:1 / -1">
+        <span class="small-note">Observación</span>
+        <input type="text" name="observacion" placeholder="Ejemplo: permiso por viaje, enfermedad o comisión" class="full-select">
+      </label>
+      <div style="grid-column:1 / -1">
+        <button class="btn">Registrar permiso</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="small-note">Tu rol puede consultar esta información, pero no registrar permisos.</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="two-col section">
+  <div class="card">
+    <h3>Resumen de permisos por socio</h3>
+    <table>
+      <caption>Contabilidad mensual de permisos</caption>
+      <thead><tr><th>Socio</th><th>Total permisos</th></tr></thead>
+      <tbody>
+      {% for p in permisos_resumen %}
+        <tr>
+          <td>{{ p.socio_numero }} - {{ p.socio_nombre }}</td>
+          <td>{{ p.total_permisos }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="2">No hay permisos registrados en este período.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Obligación mensual del período</h3>
+    <table>
+      <caption>Referencia rápida del total mensual por socio</caption>
+      <thead><tr><th>Socio</th><th>Total del período</th></tr></thead>
+      <tbody>
+      {% for o in obligaciones %}
+        <tr>
+          <td>{{ o.socio_numero }} - {{ o.socio_nombre }}</td>
+          <td>S/ {{ '%.1f'|format(o.total_mes or 0) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="2">Todavía no hay obligaciones calculadas para este período.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Detalle de permisos registrados</h3>
+  <table>
+    <caption>Permisos guardados en el período seleccionado</caption>
+    <thead><tr><th>Socio</th><th>Fecha</th><th>Motivo</th><th>Documento</th><th>Observación</th><th>Registrado por</th>{% if puede_editar %}<th>Acción</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for p in permisos_registrados %}
+      <tr>
+        <td>{{ p.socio_numero }} - {{ p.socio_nombre }}</td>
+        <td>{{ p.fecha_permiso or '-' }}</td>
+        <td>
+          {% if p.motivo %}
+            {% set motivo_class = 'motivo-otros' %}
+            {% if p.motivo == 'Trabajo' %}
+              {% set motivo_class = 'motivo-trabajo' %}
+            {% elif p.motivo == 'Salud' %}
+              {% set motivo_class = 'motivo-salud' %}
+            {% elif p.motivo in ['Personal', 'Familiar'] %}
+              {% set motivo_class = 'motivo-personal' %}
+            {% endif %}
+            <span class="motivo-chip {{ motivo_class }}">{{ p.motivo }}</span>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>{% if p.documento %}<a href="{{ build_permiso_document_url(p.documento) }}" target="_blank" rel="noopener">Abrir documento</a>{% else %}-{% endif %}</td>
+        <td>{{ p.observacion or '-' }}</td>
+        <td>{{ p.registrado_por or '-' }}</td>
+        {% if puede_editar %}
+        <td>
+          <form method="post" style="margin:0">
+            <input type="hidden" name="action" value="eliminar_permiso">
+            <input type="hidden" name="periodo" value="{{ periodo }}">
+            <input type="hidden" name="permiso_id" value="{{ p.id }}">
+            <button class="btn secondary">Eliminar</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="{% if puede_editar %}7{% else %}6{% endif %}">Todavía no hay permisos registrados para este período.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

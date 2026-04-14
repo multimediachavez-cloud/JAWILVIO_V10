@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Socios importados desde el Excel real</h2>
+<form class="search" method="get">
+  <input type="text" name="q" placeholder="Busca por número o nombre del socio" value="{{ q }}">
+  <button class="btn">Buscar</button>
+</form>
+<table>
+  <thead><tr><th>N°</th><th>Apellidos y nombres</th><th>Meses</th><th>Fecha préstamo</th><th>Saldo</th><th>Mes/2026</th><th>Acción</th></tr></thead>
+  <tbody>
+  {% for s in socios %}
+    <tr>
+      <td>{{ s.numero }}</td>
+      <td>{{ s.nombre }}</td>
+      <td>{{ s.plazo_real or s.plazo_balance or s.meses or '' }}</td>
+      <td>{{ s.fecha_prestamo or '' }}</td>
+      <td>S/ {{ '%.1f'|format(s.saldo_periodo or 0) }}</td>
+      <td>{{ s.mes_2026 or '-' }}</td>
+      <td><a class="btn light" href="{{ url_for('main.socio_detalle', numero=s.numero) }}">Abrir estado de cuenta</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

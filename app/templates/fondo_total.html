@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Fondo total de la asociación</h2>
+
+<div class="kpi-grid section">
+  <div class="kpi-box"><div class="label">Saldo total pendiente</div><div class="value">S/ {{ '%.2f'|format(saldo_total or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Capital recuperado</div><div class="value">S/ {{ '%.2f'|format(capital or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Intereses proyectados</div><div class="value">S/ {{ '%.2f'|format(intereses or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Fondo estimado</div><div class="value">S/ {{ '%.2f'|format(fondo_estimado or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Cuotas proyectadas</div><div class="value">S/ {{ '%.2f'|format(cuotas or 0) }}</div></div>
+  <div class="kpi-box"><div class="label">Cuota promedio</div><div class="value">S/ {{ '%.2f'|format(promedio or 0) }}</div></div>
+</div>
+
+<div class="two-col section">
+  <div class="card">
+    <h3>Interpretación rápida</h3>
+    <p>El <strong>fondo estimado</strong> considera el capital recuperado más los intereses proyectados del cronograma importado. El <strong>saldo total pendiente</strong> refleja el saldo actualmente asociado a los socios en la hoja principal.</p>
+    <p>Usa este módulo para presentar a la directiva una vista simple del comportamiento financiero del fondo comunal.</p>
+    <a class="btn" href="{{ url_for('main.reporte_mensual_csv') }}">Descargar resumen mensual CSV</a>
+  </div>
+  <div class="card">
+    <h3>Resumen mensual reciente</h3>
+    <table>
+      <thead><tr><th>Período</th><th>Intereses</th><th>Capital</th><th>Cuotas proyectadas</th></tr></thead>
+      <tbody>
+      {% for r in mensual %}
+        <tr>
+          <td>{{ r.periodo }}</td>
+          <td>S/ {{ '%.2f'|format(r.intereses or 0) }}</td>
+          <td>S/ {{ '%.2f'|format(r.capital or 0) }}</td>
+          <td>S/ {{ '%.2f'|format(r.cuotas or 0) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

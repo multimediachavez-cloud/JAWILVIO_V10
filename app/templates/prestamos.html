@@ -1,0 +1,74 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Control de cartera</div>
+    <h2>Relación de préstamos de los integrantes de la asociación</h2>
+    <p class="module-subtitle">Consulta la cartera actual ordenada por socio, con fecha de préstamo, cuotas pendientes e interés acumulado del cronograma.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.socios') }}">Abrir socios</a>
+    <a class="btn secondary" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+  </div>
+</div>
+<div class="section card">
+  <p class="small-note">Esta vista toma como referencia principal la relación actualizada del archivo Excel en la hoja SOCIOS. El plazo real y las cuotas pendientes se calculan desde el cronograma del préstamo.</p>
+  {% if periodo_cerrado %}
+  <p class="small-note">El cierre mensual aplicado actualmente es <strong>{{ periodo_cerrado_label }}</strong>. Las filas en verde indican que el cronograma del socio ya incluye ese período cerrado.</p>
+  {% endif %}
+  <div class="grid" style="margin-bottom:14px;">
+    <div class="card">
+      <h3>Socios con historial Excel</h3>
+      <div class="big">{{ resumen_historial_excel.socios_con_historial or 0 }}</div>
+    </div>
+    <div class="card">
+      <h3>Socios con préstamo marzo 2026</h3>
+      <div class="big">{{ resumen_historial_excel.socios_con_marzo_2026 or 0 }}</div>
+    </div>
+  </div>
+  <table>
+    <caption>Cartera actual por socio</caption>
+    <thead><tr><th>N°</th><th>Apellidos y nombres</th><th>Cuotas</th><th>Fecha préstamo</th><th>Saldo actual</th><th>Cuotas por pagar</th><th>Historial Excel</th><th>Préstamo activo del Excel</th><th>Intereses cronograma</th><th>Acción</th></tr></thead>
+    <tbody>
+    {% for p in prestamos %}
+      {% set row_class = 'cronograma-cerrado' if p.incluye_periodo_cerrado else '' %}
+      <tr class="{{ row_class }}">
+        <td>{{ p.numero }}</td>
+        <td>{{ p.nombre }}</td>
+        <td>{{ p.plazo_real or p.plazo_balance or p.meses or 0 }}</td>
+        <td>{{ p.fecha_prestamo_vista or p.fecha_prestamo or '-' }}</td>
+        <td>S/ {{ '%.2f'|format(p.saldo_relacion or 0) }}</td>
+        <td>{{ p.cuotas_pendientes or 0 }}</td>
+        <td>
+          {% if p.tiene_historial_excel %}
+            {{ p.total_bloques_excel }} bloques
+            {% if p.tiene_prestamo_marzo_2026 %}<br>Incluye marzo 2026{% endif %}
+            {% if p.incluye_periodo_cerrado and p.periodo_cerrado_label %}<br>Incluye cierre {{ p.periodo_cerrado_label }}{% endif %}
+          {% elif p.tiene_prestamo_marzo_2026 %}
+            Marzo 2026
+            {% if p.incluye_periodo_cerrado and p.periodo_cerrado_label %}<br>Incluye cierre {{ p.periodo_cerrado_label }}{% endif %}
+          {% elif p.incluye_periodo_cerrado and p.periodo_cerrado_label %}
+            Incluye cierre {{ p.periodo_cerrado_label }}
+          {% else %}
+            Un solo bloque
+          {% endif %}
+        </td>
+        <td>{{ p.titulo_prestamo_excel_activo or '-' }}</td>
+        <td>S/ {{ '%.2f'|format(p.interes_total or 0) }}</td>
+        <td><a href="{{ url_for('main.socio_detalle', numero=p.numero) }}">Abrir detalle</a></td>
+      </tr>
+    {% endfor %}
+      <tr class="prestamo-total">
+        <td colspan="4"><strong>TOTAL</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(resumen_prestamos.saldo_total or 0) }}</strong></td>
+        <td colspan="5">-</td>
+      </tr>
+      <tr class="prestamo-promedio">
+        <td colspan="4"><strong>ACCIONES POR SOCIO</strong></td>
+        <td><strong>S/ {{ '%.1f'|format(resumen_prestamos.saldo_promedio or 0) }}</strong></td>
+        <td colspan="5">Promedio de saldo por integrante</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

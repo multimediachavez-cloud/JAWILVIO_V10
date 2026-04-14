@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Gráficos financieros</h2>
+<div class="card section">
+  <p class="small-note">Vista simplificada del comportamiento mensual del cronograma importado. La altura de cada barra se basa en el total de cuotas del mes.</p>
+  <div class="chart-bars">
+    {% for r in mensual %}
+      {% set pct = ((r.cuotas or 0) / max_cuota * 100) if max_cuota else 0 %}
+      <div class="chart-col">
+        <div class="chart-bar" style="height: {{ pct }}%"></div>
+        <div class="chart-label">{{ r.periodo }}<br>S/ {{ '%.2f'|format(r.cuotas or 0) }}</div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="two-col section">
+  <div class="card">
+    <h3>Intereses por mes</h3>
+    <table>
+      <thead><tr><th>Período</th><th>Intereses</th><th>Capital</th><th>Cuotas</th></tr></thead>
+      <tbody>
+      {% for r in mensual %}
+        <tr>
+          <td>{{ r.periodo }}</td>
+          <td>S/ {{ '%.2f'|format(r.intereses or 0) }}</td>
+          <td>S/ {{ '%.2f'|format(r.capital or 0) }}</td>
+          <td>S/ {{ '%.2f'|format(r.cuotas or 0) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Uso del módulo</h3>
+    <p>Este módulo sirve para exponer a la directiva cómo se comporta el cronograma mensual del fondo. Puedes apoyarte también en <strong>Resumen mensual CSV</strong> para abrirlo en Excel y hacer gráficos adicionales.</p>
+    <a class="btn" href="{{ url_for('main.reporte_mensual_csv') }}">Descargar CSV mensual</a>
+  </div>
+</div>
+{% endblock %}

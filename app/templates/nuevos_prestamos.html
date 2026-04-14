@@ -1,0 +1,425 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Colocación del fondo</div>
+    <h2>Nuevos préstamos</h2>
+    <p class="module-subtitle">Distribuye el fondo mensual disponible en uno o varios préstamos, con prioridad manual o sugerencia automática por menor saldo.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.cierre_mensual', periodo=periodo) }}">Abrir cierre mensual</a>
+    <a class="btn secondary" href="{{ url_for('main.aportaciones_mensuales', periodo=periodo) }}">Abrir aportaciones</a>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card"><h3>Período</h3><div class="big">{{ periodo }}</div></div>
+  <div class="card"><h3>Fondo del mes</h3><div class="big">S/ {{ '%.1f'|format(fondo_total or 0) }}</div></div>
+  <div class="card"><h3>Ya colocado</h3><div class="big">S/ {{ '%.1f'|format(fondo_reservado or 0) }}</div></div>
+  <div class="card"><h3>Saldo por colocar</h3><div class="big">S/ {{ '%.1f'|format(saldo_por_colocar or 0) }}</div></div>
+</div>
+<div class="card section">
+  <p class="small-note">El fondo del mes se calcula con las cuotas reales del período + aportes mensuales.</p>
+</div>
+
+{% if es_periodo_historico_oficial %}
+<div class="card section historico-oficial-banner">
+  <div class="historico-oficial-topline">
+    <span class="historico-pill">Bloqueado</span>
+    <strong>Período histórico oficial</strong>
+  </div>
+  <p>
+    {{ periodo }} se mantiene como corte histórico oficial de la asociación. Este mes queda preservado como referencia cerrada y no debe interpretarse como un período abierto de colocación operativa.
+  </p>
+  <div class="small-note">La colocación mensual automática y los registros operativos se trabajan desde {{ siguiente_periodo_operativo }} en adelante.</div>
+</div>
+{% endif %}
+
+<div class="card section {% if (cierre.estado or 'Abierto') == 'Cerrado' %}compare-summary summary-ok{% else %}compare-summary summary-warn{% endif %}">
+  <strong>Estado del período:</strong>
+  {% if (cierre.estado or 'Abierto') == 'Cerrado' %}
+    Período cerrado. Este mes ya quedó cerrado administrativamente.
+  {% else %}
+    Período abierto. Este mes sigue disponible para registrar y aprobar nuevos préstamos.
+  {% endif %}
+</div>
+
+{% if not can_access('main.nuevos_prestamos', True) %}
+<div class="card section">
+  <p class="small-note">Tu rol puede revisar este módulo, pero no registrar, aprobar ni anular préstamos.</p>
+</div>
+{% endif %}
+
+<div class="card section {% if colocacion_completa %}compare-summary summary-ok{% else %}compare-summary summary-warn{% endif %}">
+  {% if colocacion_completa %}
+    <strong>Colocación mensual completa:</strong> el fondo del periodo ya fue distribuido totalmente en nuevos préstamos.
+  {% else %}
+    <strong>Colocación mensual pendiente:</strong> todavía faltan S/ {{ '%.1f'|format(saldo_por_colocar or 0) }} por prestar en este periodo. Avance actual: {{ '%.1f'|format(porcentaje_colocado or 0) }}%.
+  {% endif %}
+  {% if colocacion_fuente in ['excel_activo', 'mixto'] and colocacion_excel_rows %}
+    <div class="small-note" style="margin-top:8px">
+      Detección automática desde Excel:
+      {% for row in colocacion_excel_rows %}
+        {{ row.socio_numero }} - {{ row.socio_nombre }}{% if not loop.last %}, {% endif %}
+      {% endfor %}
+    </div>
+    <div style="margin-top:12px">
+      <table>
+        <caption>Socios detectados por colocación automática del período</caption>
+        <thead><tr><th>Socio</th><th>Fecha de inicio</th><th>Monto inicial</th><th>Cuotas</th><th>Origen</th></tr></thead>
+        <tbody>
+        {% for row in colocacion_detalle_rows %}
+          <tr>
+            <td>{{ row.socio_numero }} - {{ row.socio_nombre }}</td>
+            <td>{{ row.fecha_inicio or '-' }}</td>
+            <td>{% if row.monto_inicial is not none %}S/ {{ '%.1f'|format(row.monto_inicial) }}{% else %}-{% endif %}</td>
+            <td>{{ row.plazo_total or 0 }}</td>
+            <td>
+              <span class="origin-chip {% if row.origen == 'Excel' %}excel{% elif row.origen == 'App (Aprobado)' %}app-approved{% elif row.origen == 'App (Reservado)' %}app-reserved{% endif %}">
+                {{ row.origen }}
+              </span>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="small-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <strong>Conteo por origen:</strong>
+        <span class="origin-chip excel">Excel: {{ colocacion_origin_counts.excel }}</span>
+        <span class="origin-chip app-approved">App (Aprobado): {{ colocacion_origin_counts.app_aprobado }}</span>
+        <span class="origin-chip app-reserved">App (Reservado): {{ colocacion_origin_counts.app_reservado }}</span>
+      </div>
+      <div class="small-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+        <strong>Leyenda de origen:</strong>
+        <span class="origin-chip excel">Excel</span>
+        <span>detectado automáticamente desde la hoja activa del período</span>
+        <span class="origin-chip app-approved">App (Aprobado)</span>
+        <span>registrado y aprobado dentro de la app</span>
+        <span class="origin-chip app-reserved">App (Reservado)</span>
+        <span>registrado en la app y pendiente de aprobación</span>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<div class="card section">
+  <div class="search" style="align-items:center;justify-content:space-between">
+    <div>
+      <strong>Filtro de prioridad:</strong>
+      <span class="small-note">Elige si quieres ver todos los socios, solo los manuales o solo los automáticos.</span>
+    </div>
+    <div class="search" style="margin-bottom:0">
+      <a class="btn {% if filtro == 'todos' %}{% else %}secondary{% endif %}" href="{{ url_for('main.nuevos_prestamos', periodo=periodo, filtro='todos', prestamo_id=prestamo.id if prestamo else None) }}">Todos ({{ filtro_counts.todos }})</a>
+      <a class="btn {% if filtro == 'manuales' %}{% else %}secondary{% endif %}" href="{{ url_for('main.nuevos_prestamos', periodo=periodo, filtro='manuales', prestamo_id=prestamo.id if prestamo else None) }}">Manuales ({{ filtro_counts.manuales }})</a>
+      <a class="btn {% if filtro == 'automaticos' %}{% else %}secondary{% endif %}" href="{{ url_for('main.nuevos_prestamos', periodo=periodo, filtro='automaticos', prestamo_id=prestamo.id if prestamo else None) }}">Automáticos ({{ filtro_counts.automaticos }})</a>
+    </div>
+  </div>
+</div>
+
+<div class="grid section">
+  <div class="card">
+    <h3>Manuales activos</h3>
+    <div class="big">{{ resumen_prioridades.manuales_activos }}</div>
+  </div>
+  <div class="card">
+    <h3>Automáticos activos</h3>
+    <div class="big">{{ resumen_prioridades.automaticos_activos }}</div>
+  </div>
+  <div class="card">
+    <h3>Socios sugeridos este mes</h3>
+    <div class="big">{{ resumen_prioridades.socios_sugeridos_mes }}</div>
+  </div>
+  <div class="card">
+    <h3>Monto sugerido este mes</h3>
+    <div class="big">S/ {{ '%.1f'|format(resumen_prioridades.monto_sugerido_mes or 0) }}</div>
+  </div>
+  <div class="card {% if (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.6) %}summary-card-level-low{% elif (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.2) %}summary-card-level-medium{% else %}summary-card-level-high{% endif %}">
+    <h3>Restante sin sugerir</h3>
+    <div class="big">
+      S/ {{ '%.1f'|format(resumen_prioridades.restante_sin_sugerir or 0) }}
+      <span class="progress-level-chip {% if (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.6) %}level-low{% elif (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.2) %}level-medium{% else %}level-high{% endif %}">
+        {% if (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.6) %}Alto{% elif (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.2) %}Medio{% else %}Bajo{% endif %}
+      </span>
+    </div>
+    <div class="summary-progress">
+      <div class="summary-progress-track">
+        <div class="summary-progress-fill {% if (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.6) %}level-low{% elif (resumen_prioridades.restante_sin_sugerir or 0) > ((fondo_disponible or 0) * 0.2) %}level-medium{% else %}level-high{% endif %}" style="width: {{ '%.1f'|format((((resumen_prioridades.restante_sin_sugerir or 0) / (fondo_disponible or 1)) * 100) if (fondo_disponible or 0) > 0 else 0) }}%"></div>
+      </div>
+      <div class="small-note">Remanente visual del fondo que aún falta cubrir con la sugerencia.</div>
+    </div>
+  </div>
+  <div class="card {% if (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 40 %}summary-card-level-low{% elif (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 80 %}summary-card-level-medium{% else %}summary-card-level-high{% endif %}">
+    <h3>Porcentaje sugerido del fondo</h3>
+    <div class="big">
+      {{ '%.1f'|format(resumen_prioridades.porcentaje_sugerido_fondo or 0) }}%
+      <span class="progress-level-chip {% if (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 40 %}level-low{% elif (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 80 %}level-medium{% else %}level-high{% endif %}">
+        {% if (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 40 %}Bajo{% elif (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 80 %}Medio{% else %}Alto{% endif %}
+      </span>
+    </div>
+    <div class="summary-progress">
+      <div class="summary-progress-track">
+        <div class="summary-progress-fill {% if (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 40 %}level-low{% elif (resumen_prioridades.porcentaje_sugerido_fondo or 0) < 80 %}level-medium{% else %}level-high{% endif %}" style="width: {{ '%.1f'|format(resumen_prioridades.porcentaje_sugerido_fondo or 0) }}%"></div>
+      </div>
+      <div class="small-note">Cobertura visual del fondo sugerido para este período.</div>
+    </div>
+  </div>
+</div>
+
+<div class="card section">
+  <div class="small-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <strong>Leyenda:</strong>
+    <span class="progress-level-chip level-low" style="margin-left:0">Alto</span>
+    <span>falta mucho por distribuir</span>
+    <span class="progress-level-chip level-medium" style="margin-left:0">Medio</span>
+    <span>la cobertura está en proceso</span>
+    <span class="progress-level-chip level-high" style="margin-left:0">Bajo</span>
+    <span>la sugerencia ya cubre casi todo</span>
+  </div>
+</div>
+
+<div class="split section">
+  <div class="card">
+    <h3>Generar nuevo préstamo</h3>
+    <p class="small-note">Este módulo trabaja como bolsa mensual de colocación. Todo el saldo disponible del período debe repartirse en uno o varios préstamos. Ingresa monto, cuotas y fecha de desembolso. La app permite entre {{ min_cuotas }} y {{ max_cuotas }} cuotas y genera automáticamente el cronograma con una tasa mensual de {{ '%.2f'|format((tasa_mensual or 0) * 100) }}%.</p>
+    {% if can_access('main.nuevos_prestamos', True) %}
+    <form method="post" class="form-inline">
+      <input type="hidden" name="periodo" value="{{ periodo }}">
+      <input type="hidden" name="filtro" value="{{ filtro }}">
+      <select name="socio_numero" style="padding:11px 12px;border:1px solid #d6dfec;border-radius:10px">
+        {% for s in socios %}
+          <option value="{{ s.numero }}">{{ s.numero }} - {{ s.nombre }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="monto" placeholder="Monto del préstamo, por ejemplo 2500">
+      <input type="text" name="cuotas" placeholder="Número de cuotas, entre {{ min_cuotas }} y {{ max_cuotas }}">
+      <input type="text" name="fecha_desembolso" placeholder="Fecha de desembolso en formato YYYY-MM-DD" value="{{ periodo }}-29">
+      <button class="btn">Reservar préstamo</button>
+    </form>
+    {% else %}
+    <div class="small-note">La creación de préstamos está disponible solo para usuarios autorizados.</div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Cierre base</h3>
+    <div class="metric"><span>Total recaudado del mes</span><strong>S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</strong></div>
+    <div class="metric"><span>Total préstamos mensuales</span><strong>S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</strong></div>
+    <div class="metric"><span>Total aportes mensuales</span><strong>S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</strong></div>
+    <div class="metric"><span>Capital recuperado</span><strong>S/ {{ '%.1f'|format(cierre.total_capital or 0) }}</strong></div>
+    <div class="metric"><span>Intereses recuperados</span><strong>S/ {{ '%.1f'|format(cierre.total_intereses or 0) }}</strong></div>
+  </div>
+</div>
+
+<div class="section card">
+  <h3>Orden manual por administrador</h3>
+  <p class="small-note">Si defines prioridades manuales, la sugerencia las respeta primero. Los socios sin prioridad manual siguen ordenándose por menor saldo.</p>
+  <div class="search" style="margin-bottom:12px">
+    <span class="priority-chip manual">Prioridad manual activa</span>
+    <span class="priority-chip auto">Orden automático por menor saldo</span>
+  </div>
+  {% if can_access('main.nuevos_prestamos', True) %}
+  <form method="post">
+    <input type="hidden" name="periodo" value="{{ periodo }}">
+    <input type="hidden" name="filtro" value="{{ filtro }}">
+    <input type="hidden" name="action" value="guardar_prioridades">
+    <table>
+      <caption>Prioridad manual de colocación</caption>
+      <thead><tr><th>N°</th><th>Socio</th><th>Saldo base</th><th>Prioridad manual</th><th>Movimiento</th></tr></thead>
+      <tbody>
+      {% for s in socios_orden_manual %}
+        <tr class="{% if prioridades.get(s.numero) %}priority-row-manual{% else %}priority-row-auto{% endif %}">
+          <td>{{ s.numero }}</td>
+          <td>
+            {{ s.nombre }}
+            {% if prioridades.get(s.numero) %}
+              <span class="priority-chip manual">Manual</span>
+            {% else %}
+              <span class="priority-chip auto">Automático</span>
+            {% endif %}
+          </td>
+          <td>S/ {{ '%.1f'|format(s.saldo_prioridad or 0) }}</td>
+          <td style="width:180px">
+            <input type="text" name="prioridad_{{ s.numero }}" value="{{ prioridades.get(s.numero, '') }}" placeholder="Escribe 1, 2, 3..." style="width:100%">
+          </td>
+          <td style="white-space:nowrap">
+            <form method="post" style="display:inline-block">
+              <input type="hidden" name="periodo" value="{{ periodo }}">
+              <input type="hidden" name="filtro" value="{{ filtro }}">
+              <input type="hidden" name="socio_numero" value="{{ s.numero }}">
+              <input type="hidden" name="action" value="enviar_arriba">
+              <button class="btn secondary" style="padding:6px 10px">Enviar arriba</button>
+            </form>
+            <form method="post" style="display:inline-block;margin-left:6px">
+              <input type="hidden" name="periodo" value="{{ periodo }}">
+              <input type="hidden" name="filtro" value="{{ filtro }}">
+              <input type="hidden" name="action" value="subir_prioridad">
+              <input type="hidden" name="socio_numero" value="{{ s.numero }}">
+              <button class="btn secondary" style="padding:6px 10px">Subir</button>
+            </form>
+            <form method="post" style="display:inline-block;margin-left:6px">
+              <input type="hidden" name="periodo" value="{{ periodo }}">
+              <input type="hidden" name="filtro" value="{{ filtro }}">
+              <input type="hidden" name="action" value="bajar_prioridad">
+              <input type="hidden" name="socio_numero" value="{{ s.numero }}">
+              <button class="btn secondary" style="padding:6px 10px">Bajar</button>
+            </form>
+            <form method="post" style="display:inline-block;margin-left:6px">
+              <input type="hidden" name="periodo" value="{{ periodo }}">
+              <input type="hidden" name="filtro" value="{{ filtro }}">
+              <input type="hidden" name="action" value="enviar_abajo">
+              <input type="hidden" name="socio_numero" value="{{ s.numero }}">
+              <button class="btn secondary" style="padding:6px 10px">Enviar abajo</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+      <tr><td colspan="5">No hay socios disponibles para ordenar.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="search" style="margin-top:12px">
+      <button class="btn">Guardar orden manual</button>
+    </div>
+  </form>
+  <form method="post" style="margin-top:10px">
+    <input type="hidden" name="periodo" value="{{ periodo }}">
+    <input type="hidden" name="filtro" value="{{ filtro }}">
+    <input type="hidden" name="action" value="limpiar_prioridades">
+    <button class="btn secondary">Limpiar orden manual</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="section card">
+  <h3>Sugerencia automática de colocación</h3>
+  <p class="small-note">La app propone una distribución del fondo mensual respetando primero el orden manual del administrador y, donde no exista, priorizando a los socios con menor saldo.</p>
+  {% if sugerencias and can_access('main.nuevos_prestamos', True) %}
+  <form method="post" style="margin-bottom:12px">
+    <input type="hidden" name="periodo" value="{{ periodo }}">
+    <input type="hidden" name="filtro" value="{{ filtro }}">
+    <input type="hidden" name="action" value="aplicar_sugerencia">
+    <button class="btn">Aplicar sugerencia</button>
+  </form>
+  {% endif %}
+  <table>
+    <caption>Sugerencia automática del período</caption>
+    <thead><tr><th>N°</th><th>Socio</th><th>Prioridad</th><th>Saldo base</th><th>Monto sugerido</th><th>Cuotas sugeridas</th></tr></thead>
+    <tbody>
+    {% for s in sugerencias %}
+      <tr class="{% if s.prioridad_manual is not none %}priority-row-manual{% else %}priority-row-auto{% endif %}">
+        <td>{{ s.numero }}</td>
+        <td>
+          {{ s.nombre }}
+          {% if s.prioridad_manual is not none %}
+            <span class="priority-chip manual">Manual</span>
+          {% else %}
+              <span class="priority-chip auto">Automático</span>
+          {% endif %}
+        </td>
+        <td>{% if s.prioridad_manual is not none %}{{ s.prioridad_manual }}{% else %}Auto{% endif %}</td>
+        <td>S/ {{ '%.1f'|format(s.saldo_prioridad or 0) }}</td>
+        <td><strong>S/ {{ '%.1f'|format(s.monto_sugerido or 0) }}</strong></td>
+        <td>{{ s.cuotas_sugeridas }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6">No hay sugerencias para este período.</td></tr>
+    {% endfor %}
+      <tr class="prestamo-total">
+        <td colspan="4"><strong>Sugerido a colocar</strong></td>
+        <td><strong>S/ {{ '%.1f'|format((saldo_por_colocar or 0) - (restante_sugerido or 0)) }}</strong></td>
+        <td>{% if restante_sugerido and restante_sugerido > 0 %}Restante sin asignar: S/ {{ '%.1f'|format(restante_sugerido) }}{% else %}Fondo cubierto{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section card">
+  <h3>Préstamos del período</h3>
+  <table>
+    <caption>Préstamos reservados y aprobados</caption>
+    <thead><tr><th>ID</th><th>Socio</th><th>Monto</th><th>Cuotas</th><th>Desembolso</th><th>Cuota inicial</th><th>Interes total</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody>
+    {% for p in prestamos %}
+      <tr {% if prestamo and prestamo.id == p.id %}class="prestamo-total"{% endif %}>
+        <td>{{ p.id }}</td>
+        <td>{{ p.socio_numero }} - {{ p.socio_nombre }}</td>
+        <td>S/ {{ '%.1f'|format(p.monto or 0) }}</td>
+        <td>{{ p.cuotas }}</td>
+        <td>{{ p.fecha_desembolso }}</td>
+        <td>S/ {{ '%.1f'|format(p.cuota_inicial or 0) }}</td>
+        <td>S/ {{ '%.1f'|format(p.total_interes or 0) }}</td>
+        <td>{{ p.estado }}</td>
+        <td>
+          <a href="{{ url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=p.id, filtro=filtro) }}">Abrir detalle</a>
+          {% if p.estado == 'Reservado' and can_access('main.nuevos_prestamos', True) %}
+            <form method="post" style="display:inline-block;margin-left:8px">
+              <input type="hidden" name="periodo" value="{{ periodo }}">
+              <input type="hidden" name="filtro" value="{{ filtro }}">
+              <input type="hidden" name="prestamo_id" value="{{ p.id }}">
+              <input type="hidden" name="action" value="aprobar">
+              <button class="btn" style="padding:6px 10px">Aprobar</button>
+            </form>
+            <form method="post" style="display:inline-block;margin-left:6px">
+              <input type="hidden" name="periodo" value="{{ periodo }}">
+              <input type="hidden" name="filtro" value="{{ filtro }}">
+              <input type="hidden" name="prestamo_id" value="{{ p.id }}">
+              <input type="hidden" name="action" value="anular">
+              <button class="btn secondary" style="padding:6px 10px">Anular</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9">Aún no hay nuevos préstamos registrados para este período.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if prestamo %}
+<div class="section card">
+  <h3>Cronograma del préstamo #{{ prestamo.id }}</h3>
+  <div class="search" style="margin-bottom:8px">
+    <div><strong>Socio:</strong> {{ prestamo.socio_numero }} - {{ prestamo.socio_nombre }}</div>
+    <div><strong>Monto:</strong> S/ {{ '%.1f'|format(prestamo.monto or 0) }}</div>
+    <div><strong>Total pagable:</strong> S/ {{ '%.1f'|format(prestamo.total_pagable or 0) }}</div>
+    <div><strong>Estado:</strong> {{ prestamo.estado }}</div>
+  </div>
+  {% if prestamo.estado == 'Reservado' and can_access('main.nuevos_prestamos', True) %}
+  <div class="search" style="margin-bottom:10px">
+    <form method="post">
+      <input type="hidden" name="periodo" value="{{ periodo }}">
+      <input type="hidden" name="filtro" value="{{ filtro }}">
+      <input type="hidden" name="prestamo_id" value="{{ prestamo.id }}">
+      <input type="hidden" name="action" value="aprobar">
+      <button class="btn">Aprobar y aplicar al socio</button>
+    </form>
+    <form method="post">
+      <input type="hidden" name="periodo" value="{{ periodo }}">
+      <input type="hidden" name="filtro" value="{{ filtro }}">
+      <input type="hidden" name="prestamo_id" value="{{ prestamo.id }}">
+      <input type="hidden" name="action" value="anular">
+      <button class="btn secondary">Anular préstamo</button>
+    </form>
+  </div>
+  {% endif %}
+  <table>
+    <caption>Cronograma generado</caption>
+    <thead><tr><th>Plazo</th><th>Fecha</th><th>Préstamo</th><th>Interés</th><th>Abono capital</th><th>Cuota</th><th>Saldo</th></tr></thead>
+    <tbody>
+    {% for c in cronograma %}
+      <tr>
+        <td>{{ c.plazo }}</td>
+        <td>{{ c.fecha or '' }}</td>
+        <td>{% if c.prestamo is not none %}S/ {{ '%.1f'|format(c.prestamo) }}{% endif %}</td>
+        <td>{% if c.interes is not none %}S/ {{ '%.1f'|format(c.interes) }}{% endif %}</td>
+        <td>{% if c.abono_capital is not none %}S/ {{ '%.1f'|format(c.abono_capital) }}{% endif %}</td>
+        <td>{% if c.cuota is not none %}S/ {{ '%.1f'|format(c.cuota) }}{% endif %}</td>
+        <td>{% if c.saldo is not none %}S/ {{ '%.1f'|format(c.saldo) }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+

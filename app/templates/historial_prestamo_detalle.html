@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Historial de préstamo guardado</h2>
+<div class="search" style="margin-bottom:14px;">
+  <a class="btn" href="{{ url_for('main.socio_detalle', numero=socio.numero) }}">Volver al socio</a>
+  <a class="btn secondary" href="{{ url_for('main.historial_prestamo_comparar', numero=socio.numero, historial_id=historial.id) }}">Comparar con actual</a>
+</div>
+
+<div class="grid">
+  <div class="card"><h3>Socio</h3><div>{{ socio.numero }} - {{ socio.nombre }}</div></div>
+  <div class="card"><h3>Acción</h3><div class="big">{{ historial.accion }}</div></div>
+  <div class="card"><h3>Estado</h3><div class="big">{{ historial.estado_resultante or '-' }}</div></div>
+  <div class="card"><h3>Monto</h3><div class="big">{% if historial.monto is not none %}S/ {{ '%.1f'|format(historial.monto) }}{% else %}-{% endif %}</div></div>
+  <div class="card"><h3>Cuotas</h3><div class="big">{{ historial.cuotas or '-' }}</div></div>
+  <div class="card"><h3>Desembolso</h3><div>{{ historial.fecha_desembolso or '-' }}</div></div>
+</div>
+
+<div class="section card">
+  <p class="small-note">{{ historial.detalle or '-' }}</p>
+  {% if periodo_cerrado %}
+  <p class="small-note">Los meses cerrados hasta {{ periodo_cerrado }} se muestran en verde.</p>
+  {% endif %}
+  <table>
+    <thead><tr><th>Plazo</th><th>Fecha</th><th>Préstamo</th><th>Interés</th><th>Abono capital</th><th>Cuota</th><th>Saldo</th><th>Origen</th></tr></thead>
+    <tbody>
+    {% for c in cronograma %}
+      <tr class="{% if c.periodo_cerrado %}cronograma-cerrado{% endif %}">
+        <td>{{ c.plazo }}</td>
+        <td>{{ c.fecha or '' }}</td>
+        <td>{% if c.prestamo is not none %}S/ {{ '%.1f'|format(c.prestamo) }}{% endif %}</td>
+        <td>{% if c.interes is not none %}S/ {{ '%.1f'|format(c.interes) }}{% endif %}</td>
+        <td>{% if c.abono_capital is not none %}S/ {{ '%.1f'|format(c.abono_capital) }}{% endif %}</td>
+        <td>{% if c.cuota is not none %}S/ {{ '%.1f'|format(c.cuota) }}{% endif %}</td>
+        <td>{% if c.saldo is not none %}S/ {{ '%.1f'|format(c.saldo) }}{% endif %}</td>
+        <td>{{ c.hoja_origen or '-' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8">No hay cronograma anterior guardado para este historial.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
