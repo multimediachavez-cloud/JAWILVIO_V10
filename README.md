@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # JAWILVIO V10
 
 Versión 10 integral del sistema.
@@ -30,3 +31,6 @@ venv\Scripts\activate
 pip install -r requirements.txt
 python run.py
 ```
+=======
+# JAWILVIO_V10
+>>>>>>> 69ffe61e4cc2588ce481853d806a38cdd26f17d3
