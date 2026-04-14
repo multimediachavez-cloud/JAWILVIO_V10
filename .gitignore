@@ -1,0 +1,16 @@
+# entorno virtual
+venv/
+
+# python
+__pycache__/
+*.pyc
+
+# bases de datos
+*.db
+*.db-journal
+
+# carpeta instance de Flask
+instance/
+
+# variables de entorno
+.env
