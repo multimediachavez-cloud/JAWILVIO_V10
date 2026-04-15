@@ -3817,21 +3817,36 @@ def reporte_imprimible():
             GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos
             ORDER BY s.numero
         """, (periodo_actual,)).fetchall()
+        
         cuotas = conn.execute("SELECT * FROM cuotas ORDER BY fecha LIMIT 50").fetchall()
+       
         resumen = conn.execute("""
             SELECT COUNT(*) as socios,
                    COALESCE(SUM(saldo_actual),0) as saldo_total
             FROM obligaciones_mensuales
             WHERE periodo=?
         """, (periodo_actual,)).fetchone()
-    return render_template(
-        'reporte_imprimible.html',
-        socios=socios,
-        cuotas=cuotas,
-        resumen=resumen,
-        periodo_actual=periodo_actual,
-        fecha_emision=datetime.now().strftime('%d/%m/%Y %H:%M'),
-    )
+
+        reunion_periodo = conn.execute("""
+            SELECT socio_numero,
+                   socio_nombre,
+                   estado,
+                   tipo_via,
+                   direccion_reunion
+            FROM reuniones_mensuales
+            WHERE periodo=?
+            LIMIT 1
+        """, (periodo_actual,)).fetchone()
+    
+        return render_template(
+            'reporte_imprimible.html',
+            socios=socios,
+            cuotas=cuotas,
+            resumen=resumen,
+            periodo_actual=periodo_actual,
+            fecha_emision=datetime.now().strftime('%d/%m/%Y %H:%M'),
+            reunion_periodo=reunion_periodo
+        )
 
 
 @bp.route('/morosos.csv')
