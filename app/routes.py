@@ -1464,13 +1464,12 @@ def api_socios():
             "aporte_total": float(socio["aporte_total"] or 0)
         })
 
-    from flask import Response
-    import json
-
-    return Response(
-    json.dumps({"total": len(resultado), "socios": resultado}, indent=4),
-    mimetype="application/json"
-)
+    return jsonify({
+        "ok": True,
+        "periodo": periodo_actual,
+        "total": len(resultado),
+        "socios": resultado
+    })
 
 @bp.route('/api/dashboard', methods=['GET'])
 def api_dashboard():
@@ -1525,125 +1524,22 @@ def api_dashboard():
             "SELECT COALESCE(AVG(cuota),0) FROM cuotas WHERE cuota > 0"
         ).fetchone()[0] or 0
 
-        periodo_financiero_panel = get_latest_financial_period(conn) or periodo_actual
-        snapshot_financiero = get_financial_snapshot_for_period(conn, periodo_financiero_panel)
-
-        if snapshot_financiero:
-            saldo_actual_total_oficial = float(snapshot_financiero['saldo_actual_total'] or 0)
-            acciones_por_socio_oficial = float(snapshot_financiero['acciones_por_socio'] or 0)
-        else:
-            try:
-                saldo_actual_total_oficial = float(
-                    get_config_value(conn, 'saldo_actual_total_oficial', saldo_total or 0) or 0
-                )
-            except Exception:
-                saldo_actual_total_oficial = float(saldo_total or 0)
-
-            try:
-                acciones_por_socio_oficial = float(
-                    get_config_value(conn, 'acciones_por_socio_oficial', 0) or 0
-                )
-            except Exception:
-                acciones_por_socio_oficial = 0
-
-        try:
-            total_prestamo_acumulado = float(
-                get_config_value(conn, 'total_prestamo_acumulado_oficial', cuotas_total or 0) or 0
-            )
-        except Exception:
-            total_prestamo_acumulado = float(cuotas_total or 0)
-
-        periodo_vigente = conn.execute(
-            """
-            SELECT *
-            FROM periodos
-            WHERE periodo=?
-            """,
-            (periodo_actual,),
-        ).fetchone()
-
-        colocacion_vigente = get_period_placement_status(
-            conn,
-            periodo_actual,
-            periodo_vigente['total_recaudado'] if periodo_vigente else 0,
-        )
-
-    fondo_total = float(saldo_total or 0)
-    saldo_actual_total_panel = float(saldo_actual_total_oficial or fondo_total)
-    acciones_por_socio = float(
-        acciones_por_socio_oficial or (round((saldo_actual_total_panel / total_socios), 1) if total_socios else 0)
-    )
-
-    periodo_actual_resumen = {
-        'periodo': periodo_actual,
-        'estado': periodo_vigente['estado'] if periodo_vigente else 'Abierto',
-        'socios': periodo_vigente['total_socios'] if periodo_vigente else 0,
-        'total_prestamos': float(periodo_vigente['total_prestamos'] if periodo_vigente else 0),
-        'total_aportes': float(periodo_vigente['total_aportes'] if periodo_vigente else 0),
-        'total_recaudado': float(periodo_vigente['total_recaudado'] if periodo_vigente else 0),
-        'total_colocado': float(colocacion_vigente['total_colocado'] if colocacion_vigente else 0),
-        'saldo_por_colocar': float(colocacion_vigente['saldo_por_colocar'] if colocacion_vigente else 0),
-        'colocacion_completa': (colocacion_vigente['saldo_por_colocar'] if colocacion_vigente else 0) <= 0.0001,
-        'porcentaje_colocado': round(
-            (((colocacion_vigente['total_colocado'] if colocacion_vigente else 0) /
-              ((periodo_vigente['total_recaudado'] if periodo_vigente else 0) or 1)) * 100),
-            1,
-        ) if (periodo_vigente and (periodo_vigente['total_recaudado'] or 0) > 0) else 0,
-        'promedio_por_socio': round(
-            ((periodo_vigente['total_recaudado'] if periodo_vigente else 0) /
-             ((periodo_vigente['total_socios'] if periodo_vigente else 0) or 1)),
-            1,
-        ) if (periodo_vigente and (periodo_vigente['total_socios'] or 0) > 0) else 0,
-    }
-
-    cartera_vigente_pct = round(((fondo_total or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
-    capital_recuperado_pct = round(((capital_recuperado or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
-    intereses_pct = round(((intereses or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
-    brecha_colocacion_pct = round(
-        (((periodo_actual_resumen['saldo_por_colocar'] or 0) /
-          ((periodo_actual_resumen['total_recaudado'] or 0) or 1)) * 100),
-        1,
-    ) if (periodo_actual_resumen['total_recaudado'] or 0) > 0 else 0
-
-    panel_financiero = {
-        'saldo_actual_total': saldo_actual_total_panel,
-        'total_prestamo_acumulado': total_prestamo_acumulado,
-        'capital_recuperado': float(capital_recuperado or 0),
-        'intereses_proyectados': float(intereses or 0),
-        'fondo_mes': float(periodo_actual_resumen['total_recaudado']),
-        'ya_colocado': float(periodo_actual_resumen['total_colocado']),
-        'por_colocar': float(periodo_actual_resumen['saldo_por_colocar']),
-        'acciones_por_socio': acciones_por_socio,
-        'promedio_periodo': float(periodo_actual_resumen['promedio_por_socio']),
-        'cartera_vigente_pct': cartera_vigente_pct,
-        'capital_recuperado_pct': capital_recuperado_pct,
-        'intereses_pct': intereses_pct,
-        'colocacion_pct': float(periodo_actual_resumen['porcentaje_colocado']),
-        'brecha_colocacion_pct': brecha_colocacion_pct,
-    }
-
-    respuesta = {
-    "periodo_actual": periodo_actual,
-    "totales": {
-        "total_socios": total_socios,
-        "prestamos_activos": prestamos_activos,
-        "saldo_total": float(saldo_total or 0),
-        "reuniones": reuniones,
-        "permisos": permisos,
-        "capital_recuperado": float(capital_recuperado or 0),
-        "intereses": float(intereses or 0),
-        "cuotas_total": float(cuotas_total or 0),
-        "cuota_promedio": float(cuota_promedio or 0),
-    },
-    "resumen_periodo": periodo_actual_resumen,
-    "panel_financiero": panel_financiero
-    }
-
-    return Response(
-        json.dumps(respuesta, indent=4, ensure_ascii=False),
-        mimetype="application/json"
-    )
-
+    return jsonify({
+        "ok": True,
+        "periodo_actual": periodo_actual,
+        "totales": {
+            "total_socios": total_socios,
+            "prestamos_activos": prestamos_activos,
+            "saldo_total": float(saldo_total),
+            "reuniones": reuniones,
+            "permisos": permisos,
+            "capital_recuperado": float(capital_recuperado),
+            "intereses": float(intereses),
+            "cuotas_total": float(cuotas_total),
+            "cuota_promedio": float(cuota_promedio)
+        }
+    })
+    
 @bp.route('/dashboard')
 @login_required
 def dashboard():
