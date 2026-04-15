@@ -43,25 +43,6 @@
     </div>
   </div>
 
-  <div style="margin-top:15px; display:flex; gap:15px;">
-
-    <div style="border:1px solid #ddd;padding:10px;border-radius:6px;width:33%">
-        <strong>Responsable de reunión</strong><br>
-        {{ responsable_reunion }}
-    </div>
-
-    <div style="border:1px solid #ddd;padding:10px;border-radius:6px;width:33%">
-        <strong>Estado de reunión</strong><br>
-      {{ estado_reunion }}
-    </div>
-
-    <div style="border:1px solid #ddd;padding:10px;border-radius:6px;width:33%">
-        <strong>Lugar de reunión</strong><br>
-        {{ lugar_reunion }}
-    </div>
-
-  </div>
-
   <div class="meta">
     <div class="box"><strong>Total de socios</strong>{{ resumen.socios }}</div>
     <div class="box"><strong>Saldo actual total</strong>S/ {{ '%.2f'|format(resumen.saldo_total or 0) }}</div>
