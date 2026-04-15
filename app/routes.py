@@ -7,6 +7,8 @@ from datetime import datetime, date
 import calendar
 from werkzeug.utils import secure_filename
 from .db import import_excel_if_needed
+from flask import Blueprint, render_template, request, redirect, url_for, session, current_app, make_response, flash, jsonify
+from flask import Response
 
 bp = Blueprint('main', __name__)
 
@@ -1397,6 +1399,250 @@ def logout():
         pass
     return redirect(url_for('main.login'))
 
+
+@bp.route('/api/socio/<int:socio_numero>', methods=['GET'])
+def api_socio(socio_numero):
+    with connect_db() as conn:
+        socio = conn.execute(
+            """
+            SELECT numero, nombre
+            FROM socios
+            WHERE numero = ?
+            """,
+            (socio_numero,)
+        ).fetchone()
+
+        if socio is None:
+            return jsonify({"error": "Socio no encontrado"}), 404
+
+        periodo_actual = get_default_period(conn)
+        ensure_monthly_collections(conn, periodo_actual)
+
+        saldo = conn.execute(
+            """
+            SELECT saldo_actual
+            FROM obligaciones_mensuales
+            WHERE socio_numero = ? AND periodo = ?
+            LIMIT 1
+            """,
+            (socio_numero, periodo_actual)
+        ).fetchone()
+
+    respuesta = {
+    "id": socio["numero"],
+    "nombre": socio["nombre"],
+    "aporte_total": float(saldo["saldo_actual"]) if saldo else 0.0
+    }
+
+    return Response(
+        json.dumps(respuesta, indent=4, ensure_ascii=False),
+        mimetype="application/json"
+    )
+
+@bp.route('/api/socios', methods=['GET'])
+def api_socios():
+    with connect_db() as conn:
+        periodo_actual = get_default_period(conn)
+        ensure_monthly_collections(conn, periodo_actual)
+
+        socios = conn.execute(
+            """
+            SELECT s.numero, s.nombre, COALESCE(o.saldo_actual, 0) AS aporte_total
+            FROM socios s
+            LEFT JOIN obligaciones_mensuales o
+                ON o.socio_numero = s.numero AND o.periodo = ?
+            ORDER BY s.numero ASC
+            """,
+            (periodo_actual,)
+        ).fetchall()
+
+    resultado = []
+    for socio in socios:
+        resultado.append({
+            "id": socio["numero"],
+            "nombre": socio["nombre"],
+            "aporte_total": float(socio["aporte_total"] or 0)
+        })
+
+    from flask import Response
+    import json
+
+    return Response(
+    json.dumps({"total": len(resultado), "socios": resultado}, indent=4),
+    mimetype="application/json"
+)
+
+@bp.route('/api/dashboard', methods=['GET'])
+def api_dashboard():
+    with connect_db() as conn:
+        periodo_actual = get_default_period(conn)
+        ensure_monthly_collections(conn, periodo_actual)
+        cleanup_legacy_auto_reunion_assignment(conn, periodo_actual)
+
+        total_socios = conn.execute("SELECT COUNT(*) FROM socios").fetchone()[0]
+
+        prestamos_activos = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM obligaciones_mensuales
+            WHERE periodo=? AND COALESCE(saldo_actual, 0) > 0
+            """,
+            (periodo_actual,),
+        ).fetchone()[0]
+
+        saldo_total = conn.execute(
+            """
+            SELECT COALESCE(SUM(saldo_actual), 0)
+            FROM obligaciones_mensuales
+            WHERE periodo=?
+            """,
+            (periodo_actual,),
+        ).fetchone()[0] or 0
+
+        reuniones = conn.execute(
+            "SELECT COUNT(*) FROM reuniones_mensuales WHERE periodo=?",
+            (periodo_actual,),
+        ).fetchone()[0]
+
+        permisos = conn.execute(
+            "SELECT COUNT(*) FROM permisos_mensuales WHERE periodo=?",
+            (periodo_actual,),
+        ).fetchone()[0]
+
+        capital_recuperado = conn.execute(
+            "SELECT COALESCE(SUM(abono_capital),0) FROM cuotas WHERE plazo > 0"
+        ).fetchone()[0] or 0
+
+        intereses = conn.execute(
+            "SELECT COALESCE(SUM(interes),0) FROM cuotas WHERE plazo > 0"
+        ).fetchone()[0] or 0
+
+        cuotas_total = conn.execute(
+            "SELECT COALESCE(SUM(cuota),0) FROM cuotas WHERE plazo > 0"
+        ).fetchone()[0] or 0
+
+        cuota_promedio = conn.execute(
+            "SELECT COALESCE(AVG(cuota),0) FROM cuotas WHERE cuota > 0"
+        ).fetchone()[0] or 0
+
+        periodo_financiero_panel = get_latest_financial_period(conn) or periodo_actual
+        snapshot_financiero = get_financial_snapshot_for_period(conn, periodo_financiero_panel)
+
+        if snapshot_financiero:
+            saldo_actual_total_oficial = float(snapshot_financiero['saldo_actual_total'] or 0)
+            acciones_por_socio_oficial = float(snapshot_financiero['acciones_por_socio'] or 0)
+        else:
+            try:
+                saldo_actual_total_oficial = float(
+                    get_config_value(conn, 'saldo_actual_total_oficial', saldo_total or 0) or 0
+                )
+            except Exception:
+                saldo_actual_total_oficial = float(saldo_total or 0)
+
+            try:
+                acciones_por_socio_oficial = float(
+                    get_config_value(conn, 'acciones_por_socio_oficial', 0) or 0
+                )
+            except Exception:
+                acciones_por_socio_oficial = 0
+
+        try:
+            total_prestamo_acumulado = float(
+                get_config_value(conn, 'total_prestamo_acumulado_oficial', cuotas_total or 0) or 0
+            )
+        except Exception:
+            total_prestamo_acumulado = float(cuotas_total or 0)
+
+        periodo_vigente = conn.execute(
+            """
+            SELECT *
+            FROM periodos
+            WHERE periodo=?
+            """,
+            (periodo_actual,),
+        ).fetchone()
+
+        colocacion_vigente = get_period_placement_status(
+            conn,
+            periodo_actual,
+            periodo_vigente['total_recaudado'] if periodo_vigente else 0,
+        )
+
+    fondo_total = float(saldo_total or 0)
+    saldo_actual_total_panel = float(saldo_actual_total_oficial or fondo_total)
+    acciones_por_socio = float(
+        acciones_por_socio_oficial or (round((saldo_actual_total_panel / total_socios), 1) if total_socios else 0)
+    )
+
+    periodo_actual_resumen = {
+        'periodo': periodo_actual,
+        'estado': periodo_vigente['estado'] if periodo_vigente else 'Abierto',
+        'socios': periodo_vigente['total_socios'] if periodo_vigente else 0,
+        'total_prestamos': float(periodo_vigente['total_prestamos'] if periodo_vigente else 0),
+        'total_aportes': float(periodo_vigente['total_aportes'] if periodo_vigente else 0),
+        'total_recaudado': float(periodo_vigente['total_recaudado'] if periodo_vigente else 0),
+        'total_colocado': float(colocacion_vigente['total_colocado'] if colocacion_vigente else 0),
+        'saldo_por_colocar': float(colocacion_vigente['saldo_por_colocar'] if colocacion_vigente else 0),
+        'colocacion_completa': (colocacion_vigente['saldo_por_colocar'] if colocacion_vigente else 0) <= 0.0001,
+        'porcentaje_colocado': round(
+            (((colocacion_vigente['total_colocado'] if colocacion_vigente else 0) /
+              ((periodo_vigente['total_recaudado'] if periodo_vigente else 0) or 1)) * 100),
+            1,
+        ) if (periodo_vigente and (periodo_vigente['total_recaudado'] or 0) > 0) else 0,
+        'promedio_por_socio': round(
+            ((periodo_vigente['total_recaudado'] if periodo_vigente else 0) /
+             ((periodo_vigente['total_socios'] if periodo_vigente else 0) or 1)),
+            1,
+        ) if (periodo_vigente and (periodo_vigente['total_socios'] or 0) > 0) else 0,
+    }
+
+    cartera_vigente_pct = round(((fondo_total or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
+    capital_recuperado_pct = round(((capital_recuperado or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
+    intereses_pct = round(((intereses or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
+    brecha_colocacion_pct = round(
+        (((periodo_actual_resumen['saldo_por_colocar'] or 0) /
+          ((periodo_actual_resumen['total_recaudado'] or 0) or 1)) * 100),
+        1,
+    ) if (periodo_actual_resumen['total_recaudado'] or 0) > 0 else 0
+
+    panel_financiero = {
+        'saldo_actual_total': saldo_actual_total_panel,
+        'total_prestamo_acumulado': total_prestamo_acumulado,
+        'capital_recuperado': float(capital_recuperado or 0),
+        'intereses_proyectados': float(intereses or 0),
+        'fondo_mes': float(periodo_actual_resumen['total_recaudado']),
+        'ya_colocado': float(periodo_actual_resumen['total_colocado']),
+        'por_colocar': float(periodo_actual_resumen['saldo_por_colocar']),
+        'acciones_por_socio': acciones_por_socio,
+        'promedio_periodo': float(periodo_actual_resumen['promedio_por_socio']),
+        'cartera_vigente_pct': cartera_vigente_pct,
+        'capital_recuperado_pct': capital_recuperado_pct,
+        'intereses_pct': intereses_pct,
+        'colocacion_pct': float(periodo_actual_resumen['porcentaje_colocado']),
+        'brecha_colocacion_pct': brecha_colocacion_pct,
+    }
+
+    respuesta = {
+    "periodo_actual": periodo_actual,
+    "totales": {
+        "total_socios": total_socios,
+        "prestamos_activos": prestamos_activos,
+        "saldo_total": float(saldo_total or 0),
+        "reuniones": reuniones,
+        "permisos": permisos,
+        "capital_recuperado": float(capital_recuperado or 0),
+        "intereses": float(intereses or 0),
+        "cuotas_total": float(cuotas_total or 0),
+        "cuota_promedio": float(cuota_promedio or 0),
+    },
+    "resumen_periodo": periodo_actual_resumen,
+    "panel_financiero": panel_financiero
+    }
+
+    return Response(
+        json.dumps(respuesta, indent=4, ensure_ascii=False),
+        mimetype="application/json"
+    )
 
 @bp.route('/dashboard')
 @login_required
