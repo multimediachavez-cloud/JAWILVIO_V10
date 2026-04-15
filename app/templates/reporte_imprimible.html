@@ -68,6 +68,35 @@
     <div class="box"><strong>Socios listados</strong>{{ socios|length }}</div>
   </div>
 
+  <div class="meta">
+  <div class="box">
+    <strong>Responsable de reunión</strong>
+    {% if reunion_periodo %}
+      {{ reunion_periodo.socio_numero }} - {{ reunion_periodo.socio_nombre }}
+    {% else %}
+      -
+    {% endif %}
+  </div>
+
+  <div class="box">
+    <strong>Estado de reunión</strong>
+    {% if reunion_periodo %}
+      {{ reunion_periodo.estado or '-' }}
+    {% else %}
+      -
+    {% endif %}
+  </div>
+
+  <div class="box">
+    <strong>Lugar de reunión</strong>
+    {% if reunion_periodo %}
+      {{ ((reunion_periodo.tipo_via or '') ~ ' ' ~ (reunion_periodo.direccion_reunion or '')).strip() or '-' }}
+    {% else %}
+      -
+    {% endif %}
+  </div>
+</div>
+
   <table>
     <thead>
       <tr>
