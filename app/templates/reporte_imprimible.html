@@ -58,6 +58,7 @@
         <th>Fecha de préstamo</th>
         <th>Saldo actual</th>
         <th>Reunión</th>
+        <th>Lugar de reunión</th>
         <th>Permisos</th>
       </tr>
     </thead>
@@ -70,6 +71,7 @@
         <td>{{ s.fecha_prestamo or '' }}</td>
         <td class="text-right">S/ {{ '%.2f'|format(s.saldo_periodo or 0) }}</td>
         <td>{{ s.reunion_periodo or '-' }}</td>
+        <td>{{ s.lugar_reunion_periodo or '-' }}</td>
         <td>{{ s.permisos_periodo or 0 }}</td>
       </tr>
     {% endfor %}
