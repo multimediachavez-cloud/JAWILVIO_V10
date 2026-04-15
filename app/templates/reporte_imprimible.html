@@ -69,8 +69,8 @@
         <td>{{ s.plazo_real or s.plazo_balance or s.meses }}</td>
         <td>{{ s.fecha_prestamo or '' }}</td>
         <td class="text-right">S/ {{ '%.2f'|format(s.saldo_periodo or 0) }}</td>
-        <td>{{ s.reunion or '-' }}</td>
-        <td>{{ s.permisos or '-' }}</td>
+        <td>{{ s.reunion_periodo or '-' }}</td>
+        <td>{{ s.permisos_periodo or 0 }}</td>
       </tr>
     {% endfor %}
     </tbody>
