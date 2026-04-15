@@ -118,32 +118,7 @@
     </div>
   </div>
 
-  <div class="dashboard-group">
-    <div class="dashboard-group-head">
-      <div class="module-eyebrow">Proyecci&oacute;n</div>
-      <h3>Resumen mensual del cronograma</h3>
-      <p class="small-note">Vista agregada por per&iacute;odo para revisar c&oacute;mo se distribuyen intereses, capital y cuotas proyectadas.</p>
-    </div>
-    <div class="card">
-      <table>
-        <caption>Resumen mensual del cronograma</caption>
-        <thead><tr><th>Per&iacute;odo</th><th>Intereses</th><th>Capital</th><th>Cuotas proyectadas</th></tr></thead>
-        <tbody>
-        {% for r in mensual %}
-          <tr>
-            <td>{{ r.periodo }}</td>
-            <td>S/ {{ '%.2f'|format(r.intereses or 0) }}</td>
-            <td>S/ {{ '%.2f'|format(r.capital or 0) }}</td>
-            <td>S/ {{ '%.2f'|format(r.cuotas or 0) }}</td>
-          </tr>
-        {% else %}
-          <tr><td colspan="4">No hay informaci&oacute;n mensual disponible.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
+ 
   <div class="dashboard-group">
     <div class="dashboard-group-head">
       <div class="module-eyebrow">Trazabilidad</div>
