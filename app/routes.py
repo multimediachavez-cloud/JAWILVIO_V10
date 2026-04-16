@@ -3845,7 +3845,9 @@ def reporte_imprimible():
             resumen=resumen,
             periodo_actual=periodo_actual,
             fecha_emision=datetime.now().strftime('%d/%m/%Y %H:%M'),
-            reunion_periodo=reunion_periodo
+            reunion_periodo=reunion_periodo,
+            app_nombre="Asociación JAWILVIO",
+            app_ubicacion="Celendín, Cajamarca"
         )
 
 
