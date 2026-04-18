@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Configuración general</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:30px;background:#f7f9fc;color:#17263c}
+    .card{max-width:700px;margin:auto;background:#fff;border:1px solid #dbe4f0;border-radius:12px;padding:24px}
+    h1{margin-bottom:20px}
+    label{display:block;font-weight:bold;margin-top:14px;margin-bottom:6px}
+    input{width:100%;padding:12px;border:1px solid #cfd9e6;border-radius:8px;font-size:14px}
+    button{margin-top:20px;padding:12px 18px;background:#1d4ed8;color:white;border:none;border-radius:8px;font-size:14px;cursor:pointer}
+    .msg{padding:10px 12px;border-radius:8px;margin-bottom:14px}
+    .success{background:#dcfce7;color:#166534}
+    .danger{background:#fee2e2;color:#991b1b}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Configuración general</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="msg {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post">
+      <label>Nombre de la asociación</label>
+      <input type="text" name="nombre_asociacion" value="{{ nombre_asociacion }}">
+
+      <label>Ubicación</label>
+      <input type="text" name="ubicacion" value="{{ ubicacion }}">
+
+      <button type="submit">Guardar cambios</button>
+    </form>
+  </div>
+</body>
+</html>
