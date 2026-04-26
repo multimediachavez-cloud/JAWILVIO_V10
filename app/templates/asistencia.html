@@ -1,10 +1,22 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Control de asistencia</h2>
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Control operativo</div>
+    <h2>Control de asistencia</h2>
+    <p class="module-subtitle">Registra asistencia, tardanzas, faltas y permisos. Las multas automáticas se calculan con base en el último estado guardado por socio y fecha.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.multas_asistencia') }}">Abrir multas automáticas</a>
+    <a class="btn secondary" href="{{ url_for('main.reuniones') }}">Abrir reuniones y permisos</a>
+  </div>
+</div>
+
 <div class="card section">
   <p class="small-note">Selecciona el socio, la fecha y el estado de asistencia. La observación es opcional y sirve para dejar contexto adicional.</p>
   {% if can_access('main.asistencia', True) %}
   <form method="post" class="form-inline">
+    <input type="hidden" name="action" value="create">
     <div>
       <label>Socio</label>
       <select name="socio_numero" required>
@@ -39,10 +51,58 @@
   {% endif %}
 </div>
 
+{% if puede_administrar_movimientos and edit_registro %}
+<div class="card section">
+  <p class="small-note">Corrección administrativa del movimiento seleccionado. Al guardar o eliminar, las multas automáticas del período se recalculan.</p>
+  <form method="post" class="form-inline">
+    <input type="hidden" name="action" value="update">
+    <input type="hidden" name="registro_id" value="{{ edit_registro.id }}">
+    <div>
+      <label>Socio</label>
+      <select name="socio_numero" required>
+        {% for s in socios %}
+          <option value="{{ s.numero }}" {% if s.numero == edit_registro.socio_numero %}selected{% endif %}>{{ s.numero }} - {{ s.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Fecha</label>
+      <input type="date" name="fecha" value="{{ edit_registro.fecha }}" required>
+    </div>
+    <div>
+      <label>Estado</label>
+      <select name="estado" required>
+        <option {% if edit_registro.estado == 'Asistió' %}selected{% endif %}>Asistió</option>
+        <option {% if edit_registro.estado == 'Faltó' %}selected{% endif %}>Faltó</option>
+        <option {% if edit_registro.estado == 'Tardanza' %}selected{% endif %}>Tardanza</option>
+        <option {% if edit_registro.estado == 'Permiso' %}selected{% endif %}>Permiso</option>
+      </select>
+    </div>
+    <div style="grid-column:1/-1">
+      <label>Observación</label>
+      <input type="text" name="observacion" value="{{ edit_registro.observacion or '' }}" placeholder="Escribe una observación si hace falta">
+    </div>
+    <div style="grid-column:1/-1" class="module-actions">
+      <button class="btn" type="submit">Guardar corrección</button>
+      <a class="btn secondary" href="{{ url_for('main.asistencia') }}">Cancelar edición</a>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <div class="card">
   <h3>Últimos registros</h3>
   <table>
-    <thead><tr><th>Fecha</th><th>Socio</th><th>Estado</th><th>Observación</th></tr></thead>
+    <caption>Últimos movimientos de asistencia</caption>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Socio</th>
+        <th>Estado</th>
+        <th>Observación</th>
+        {% if puede_administrar_movimientos %}<th>Acción</th>{% endif %}
+      </tr>
+    </thead>
     <tbody>
     {% for r in registros %}
       <tr>
@@ -50,6 +110,16 @@
         <td>{{ r.socio_nombre }}</td>
         <td>{{ r.estado }}</td>
         <td>{{ r.observacion }}</td>
+        {% if puede_administrar_movimientos %}
+        <td class="row-actions">
+          <a class="btn btn-inline secondary" href="{{ url_for('main.asistencia', edit=r.id) }}">Editar</a>
+          <form method="post" class="inline-form" onsubmit="return confirm('¿Eliminar este movimiento de asistencia?');">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="registro_id" value="{{ r.id }}">
+            <button class="btn btn-inline btn-danger" type="submit">Eliminar</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>

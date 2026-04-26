@@ -1,17 +1,95 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Configuración institucional</h2>
-<div class="card">
-  <p class="small-note">Actualiza aquí los datos base de la asociación y los montos que usa el sistema en sus cálculos mensuales.</p>
-  <form method="post" class="form-inline">
-    <div><label>Nombre de la asociación</label><input type="text" name="nombre_asociacion" value="{{ cfg.get('nombre_asociacion','') }}" placeholder="Escribe el nombre institucional" required></div>
-    <div><label>Ubicación</label><input type="text" name="ubicacion" value="{{ cfg.get('ubicacion','') }}" placeholder="Ciudad, provincia o referencia"></div>
-    <div><label>Aporte mensual</label><input type="text" name="aporte_mensual" value="{{ cfg.get('aporte_mensual','150') }}" placeholder="Monto mensual por socio"></div>
-    <div><label>Saldo actual total oficial</label><input type="text" name="saldo_actual_total_oficial" value="{{ cfg.get('saldo_actual_total_oficial','887838.9') }}" placeholder="Saldo actual total oficial de la cartera"></div>
-    <div><label>Total de préstamo acumulado oficial</label><input type="text" name="total_prestamo_acumulado_oficial" value="{{ cfg.get('total_prestamo_acumulado_oficial','1444072.7') }}" placeholder="Monto oficial acumulado de préstamos"></div>
-    <div><label>Multa por inasistencia</label><input type="text" name="multa_inasistencia" value="{{ cfg.get('multa_inasistencia','10') }}" placeholder="Monto de multa por inasistencia"></div>
-    <div><label>Multa por tardanza</label><input type="text" name="multa_tardanza" value="{{ cfg.get('multa_tardanza','5') }}" placeholder="Monto de multa por tardanza"></div>
-    <div style="grid-column:1/-1"><button class="btn" type="submit">Guardar configuración</button></div>
-  </form>
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Administracion</div>
+    <h2>Configuracion del sistema</h2>
+    <p class="module-subtitle">Administra la identidad institucional, el logo visible en toda la app, el aporte mensual base y las multas automaticas por asistencia.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn secondary" href="{{ url_for('main.dashboard') }}">Abrir panel de control</a>
+  </div>
 </div>
+
+<form method="post" enctype="multipart/form-data">
+  <div class="grid section">
+    <div class="card">
+      <h3>Nombre de la asociacion</h3>
+      <input type="text" name="nombre_asociacion" value="{{ cfg.get('nombre_asociacion','') }}" placeholder="Escribe el nombre institucional" required>
+      <div class="small-note" style="margin-top:8px">Se usa en navegacion, login e imprimibles.</div>
+    </div>
+    <div class="card">
+      <h3>Ubicacion</h3>
+      <input type="text" name="ubicacion" value="{{ cfg.get('ubicacion','') }}" placeholder="Ciudad, provincia o referencia">
+      <div class="small-note" style="margin-top:8px">Aparece en encabezados institucionales y reportes.</div>
+    </div>
+    <div class="card">
+      <h3>Aporte mensual base</h3>
+      <input type="text" name="aporte_mensual" value="{{ cfg.get('aporte_mensual','150') }}" placeholder="Monto mensual por socio">
+      <div class="small-note" style="margin-top:8px">Referencia que usa el sistema en el ciclo mensual.</div>
+    </div>
+  </div>
+
+  <div class="split section">
+    <div class="card">
+      <h3>Logo institucional</h3>
+      <div class="branding-preview-wrap">
+        <div class="branding-preview-frame">
+          <img class="branding-preview-logo" src="{{ logo_actual_url }}" alt="Logo actual de la asociacion">
+        </div>
+        <div class="branding-preview-copy">
+          <div class="small-note"><strong>Logo actual:</strong> {% if usa_logo_personalizado %}personalizado{% else %}base del sistema{% endif %}</div>
+          <div class="small-note" style="margin-top:8px">Formatos permitidos: SVG, PNG, JPG, JPEG y WEBP.</div>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:14px">
+        <label style="grid-column:1 / -1">
+          <span class="small-note">Subir nuevo logo</span>
+          <input type="file" name="logo_institucional" accept=".svg,.png,.jpg,.jpeg,.webp" class="full-select">
+        </label>
+        <label style="grid-column:1 / -1">
+          <span class="small-note">Restaurar logo base</span>
+          <select name="restaurar_logo" class="full-select">
+            <option value="0" selected>No</option>
+            <option value="1">Si, volver al logo base del sistema</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Multas automaticas</h3>
+      <div class="form-grid">
+        <label>
+          <span class="small-note">Multa por inasistencia</span>
+          <input type="text" name="multa_inasistencia" value="{{ cfg.get('multa_inasistencia','10') }}" placeholder="Monto de multa por inasistencia">
+        </label>
+        <label>
+          <span class="small-note">Multa por tardanza</span>
+          <input type="text" name="multa_tardanza" value="{{ cfg.get('multa_tardanza','5') }}" placeholder="Monto de multa por tardanza">
+        </label>
+      </div>
+      <div class="small-note" style="margin-top:10px">Estas tarifas se aplican automaticamente en el modulo de multas por asistencia.</div>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h3>Referencia financiera oficial</h3>
+    <div class="form-grid">
+      <label>
+        <span class="small-note">Saldo actual total oficial</span>
+        <input type="text" name="saldo_actual_total_oficial" value="{{ cfg.get('saldo_actual_total_oficial','887838.9') }}" placeholder="Saldo actual total oficial de la cartera">
+      </label>
+      <label>
+        <span class="small-note">Total de préstamo acumulado oficial</span>
+        <input type="text" name="total_prestamo_acumulado_oficial" value="{{ cfg.get('total_prestamo_acumulado_oficial','1444072.7') }}" placeholder="Monto oficial acumulado de préstamos">
+      </label>
+    </div>
+    <div class="small-note" style="margin-top:10px">Este bloque mantiene el corte financiero oficial que hoy usa el panel y algunos reportes ejecutivos.</div>
+  </div>
+
+  <div class="card section">
+    <button class="btn" type="submit">Guardar configuración del sistema</button>
+  </div>
+</form>
 {% endblock %}

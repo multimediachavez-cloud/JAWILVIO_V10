@@ -3,141 +3,134 @@
 <head>
   <meta charset="utf-8">
   <title>Reporte general imprimible</title>
-  <style>
-    body{font-family:Arial,sans-serif;margin:28px;color:#17263c}
-    h1,h2,h3,p{margin:0}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:2px solid #dbe4f0}
-    .brand{display:flex;gap:14px;align-items:flex-start}
-    .brand-logo{width:220px;max-width:100%;height:auto;display:block}
-    .brand-copy h1{font-size:22px;line-height:1.15;margin-bottom:6px}
-    .brand-copy .subtitle{font-size:14px;color:#58708c;margin-bottom:4px}
-    .brand-copy .location{font-size:13px;color:#6a8099}
-    .header-meta{text-align:right;min-width:220px}
-    .header-meta .doc-title{font-size:18px;font-weight:700;margin-bottom:8px}
-    .header-meta .meta-line{font-size:13px;color:#58708c;line-height:1.5}
-    .meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
-    .box{border:1px solid #dbe4f0;border-radius:10px;padding:12px}
-    .box strong{display:block;margin-bottom:6px}
-    table{width:100%;border-collapse:collapse;margin-top:16px}
-    th,td{border:1px solid #dbe4f0;padding:8px 10px;font-size:13px}
-    th{background:#f5f8fc}
-    .text-right{text-align:right}
-    @media print{body{margin:16px}}
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/print_a4.css') }}">
 </head>
-
-<div class="meta">
-
-  <div class="box">
-    <strong>Responsable de reunión</strong>
-    {% if reunion_periodo %}
-      {{ reunion_periodo.socio_numero }} - {{ reunion_periodo.socio_nombre }}
-    {% else %}
-      -
-    {% endif %}
-  </div>
-
-  <div class="box">
-    <strong>Estado de reunión</strong>
-    {% if reunion_periodo %}
-      {{ reunion_periodo.estado or '-' }}
-    {% else %}
-      -
-    {% endif %}
-  </div>
-
-  <div class="box">
-    <strong>Lugar de reunión</strong>
-    {% if reunion_periodo %}
-      {{ ((reunion_periodo.tipo_via or '') ~ ' ' ~ (reunion_periodo.direccion_reunion or '')).strip() or '-' }}
-    {% else %}
-      -
-    {% endif %}
-  </div>
-
-</div>
-  
-<body>
-  <div class="header">
-    <div class="brand">
-      <img class="brand-logo" src="{{ url_for('static', filename='img/logo_jawilvio_light.svg') }}" alt="Logo JAWILVIO">
-      <div class="brand-copy">
-        <h1>{{ app_nombre }}</h1>
-        <div class="subtitle">Reporte general de socios y cartera vigente</div>
-        <div class="location">{{ app_ubicacion }}</div>
+<body class="print-report">
+  <main class="print-page">
+    <header class="print-header">
+      <div class="print-brand">
+        <img class="print-brand-logo" src="{{ app_logo }}" alt="Logo institucional">
+        <div class="print-brand-copy">
+          <h1>{{ app_nombre }}</h1>
+          <div class="subtitle">Reporte general de socios y cartera vigente.</div>
+          <div class="location">{{ app_ubicacion }}</div>
+        </div>
       </div>
-    </div>
-    <div class="header-meta">
-      <div class="doc-title">Reporte general imprimible</div>
-      <div class="meta-line"><strong>Período:</strong> {{ periodo_actual }}</div>
-      <div class="meta-line"><strong>Emitido:</strong> {{ fecha_emision }}</div>
-      <div class="meta-line"><strong>Documento:</strong> Cartera general</div>
-    </div>
-  </div>
+      <div class="print-meta">
+        <div class="print-doc-title">Reporte general imprimible</div>
+        <div class="print-meta-line"><strong>Período:</strong> {{ periodo_label }}</div>
+        <div class="print-meta-line"><strong>Emitido:</strong> {{ fecha_emision }}</div>
+        <div class="print-meta-line"><strong>Documento:</strong> Cartera general</div>
+      </div>
+    </header>
 
-  <div class="meta">
-    <div class="box"><strong>Total de socios</strong>{{ resumen.socios }}</div>
-    <div class="box"><strong>Saldo actual total</strong>S/ {{ '%.2f'|format(resumen.saldo_total or 0) }}</div>
-    <div class="box"><strong>Socios listados</strong>{{ socios|length }}</div>
-  </div>
+    <section class="print-section">
+      <h2 class="print-section-title">Resumen ejecutivo</h2>
+      <div class="print-summary-grid">
+        <div class="print-card">
+          <div class="print-card-title">Total de socios</div>
+          <div class="print-card-value">{{ resumen.socios }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Saldo actual total</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(resumen.saldo_total or 0) }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Socios listados</div>
+          <div class="print-card-value">{{ socios|length }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Permisos del período</div>
+          <div class="print-card-value">{{ total_permisos_periodo }}</div>
+        </div>
+      </div>
+    </section>
 
-  <div class="meta">
-  <div class="box">
-    <strong>Responsable de reunión</strong>
-    {% if reunion_periodo %}
-      {{ reunion_periodo.socio_numero }} - {{ reunion_periodo.socio_nombre }}
-    {% else %}
-      -
-    {% endif %}
-  </div>
+    <section class="print-section">
+      <h2 class="print-section-title">Contexto del período</h2>
+      <div class="print-summary-grid three">
+        <div class="print-card">
+          <div class="print-card-title">Reunión real del período</div>
+          <div class="print-card-value small">
+            {% if reunion_periodo %}
+              {{ reunion_periodo.socio_numero }} - {{ reunion_periodo.socio_nombre }}
+            {% else %}
+              Sin reunión asignada
+            {% endif %}
+          </div>
+          <div class="print-card-subvalue">
+            {% if reunion_periodo %}
+              {{ reunion_periodo.estado or 'Pendiente' }}
+            {% else %}
+              Sin responsable definido
+            {% endif %}
+          </div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Lugar real del período</div>
+          <div class="print-card-value small">{{ lugar_reunion }}</div>
+          <div class="print-card-subvalue">Ubicación registrada en reuniones y permisos.</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Totales consolidados</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(total_saldo_listado or 0) }}</div>
+          <div class="print-card-subvalue">{{ total_permisos_listados }} permiso(s) asociados al listado.</div>
+        </div>
+      </div>
+    </section>
 
-  <div class="box">
-    <strong>Estado de reunión</strong>
-    {% if reunion_periodo %}
-      {{ reunion_periodo.estado or '-' }}
-    {% else %}
-      -
-    {% endif %}
-  </div>
+    <section class="print-section">
+      <h2 class="print-section-title">Relación general de socios</h2>
+      <div class="print-table-wrap">
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>N°</th>
+              <th>Socio</th>
+              <th>Cuotas</th>
+              <th>Fecha de préstamo</th>
+              <th class="text-right">Saldo actual</th>
+              <th>Reunión del período</th>
+              <th>Permisos del período</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for s in socios %}
+            <tr>
+              <td>{{ s.numero }}</td>
+              <td>{{ s.nombre }}</td>
+              <td>{{ s.plazo_real or s.plazo_balance or s.meses }}</td>
+              <td>{{ s.fecha_prestamo or '-' }}</td>
+              <td class="text-right">S/ {{ '%.2f'|format(s.saldo_periodo or 0) }}</td>
+              <td>
+                {% if s.reunion_asignada %}
+                  Responsable<br>
+                  <span class="muted">{{ s.reunion_estado or 'Pendiente' }}{% if s.reunion_fecha_programada %} · {{ s.reunion_fecha_programada }}{% endif %}</span>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>{% if s.permisos_periodo %}{{ s.permisos_periodo }} registro(s){% else %}-{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4">Totales del período {{ periodo_label }}</td>
+              <td class="text-right">S/ {{ '%.2f'|format(total_saldo_listado or 0) }}</td>
+              <td class="text-center">{% if reunion_periodo %}1 reunión{% else %}-{% endif %}</td>
+              <td class="text-center">{{ total_permisos_listados }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
 
-  <div class="box">
-    <strong>Lugar de reunión</strong>
-    {% if reunion_periodo %}
-      {{ ((reunion_periodo.tipo_via or '') ~ ' ' ~ (reunion_periodo.direccion_reunion or '')).strip() or '-' }}
-    {% else %}
-      -
-    {% endif %}
-  </div>
-</div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>N°</th>
-        <th>Socio</th>
-        <th>Cuotas</th>
-        <th>Fecha de préstamo</th>
-        <th>Saldo actual</th>
-        <th>Reunión</th>
-        <th>Lugar de reunión</th>
-        <th>Permisos</th>
-      </tr>
-    </thead>
-    <tbody>
-    {% for s in socios %}
-      <tr>
-        <td>{{ s.numero }}</td>
-        <td>{{ s.nombre }}</td>
-        <td>{{ s.plazo_real or s.plazo_balance or s.meses }}</td>
-        <td>{{ s.fecha_prestamo or '' }}</td>
-        <td class="text-right">S/ {{ '%.2f'|format(s.saldo_periodo or 0) }}</td>
-        <td>{{ s.reunion_periodo or '-' }}</td>
-        <td>{{ s.lugar_reunion_periodo or '-' }}</td>
-        <td>{{ s.permisos_periodo or 0 }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+    <footer class="print-footer">
+      <div>Documento generado desde el reporte general del sistema.</div>
+      <div>Período de referencia: {{ periodo_label }}</div>
+    </footer>
+  </main>
   <script>window.print()</script>
 </body>
 </html>

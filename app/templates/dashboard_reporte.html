@@ -58,21 +58,25 @@
 
     <div class="dashboard-metric-grid dashboard-metric-grid-primary">
       <div class="dashboard-metric-card dashboard-metric-card-strong">
+        <div class="dashboard-card-icon">CV</div>
         <span class="label">Saldo actual total</span>
         <div class="big">S/ {{ '%.1f'|format(saldo_actual_total_panel or 0) }}</div>
         <div class="small-note">Corte financiero {{ periodo_financiero_panel }}</div>
       </div>
       <div class="dashboard-metric-card">
+        <div class="dashboard-card-icon">PA</div>
         <span class="label">Total de préstamo acumulado</span>
         <div class="big">S/ {{ '%.1f'|format(total_prestamo_acumulado or 0) }}</div>
         <div class="small-note">Base histórica oficial de la asociación.</div>
       </div>
       <div class="dashboard-metric-card">
+        <div class="dashboard-card-icon">AS</div>
         <span class="label">Acciones por socio</span>
         <div class="big">S/ {{ '%.1f'|format(acciones_por_socio or 0) }}</div>
         <div class="small-note">Promedio oficial del corte financiero.</div>
       </div>
       <div class="dashboard-metric-card">
+        <div class="dashboard-card-icon">MS</div>
         <span class="label">Mayor saldo pendiente</span>
         <div class="big">{% if mayor_saldo %}S/ {{ '%.1f'|format(mayor_saldo.saldo_actual or 0) }}{% else %}S/ 0.0{% endif %}</div>
         <div class="small-note">{% if mayor_saldo %}{{ mayor_saldo.numero }} - {{ mayor_saldo.nombre }}{% else %}Sin registros{% endif %}</div>
@@ -81,18 +85,22 @@
 
     <div class="dashboard-metric-grid dashboard-metric-grid-secondary">
       <div class="dashboard-metric-card compact">
+        <div class="dashboard-card-icon subtle">S</div>
         <span class="label">Socios</span>
         <div class="big">{{ total_socios }}</div>
       </div>
       <div class="dashboard-metric-card compact">
+        <div class="dashboard-card-icon subtle">P</div>
         <span class="label">Préstamos activos</span>
         <div class="big">{{ prestamos_activos }}</div>
       </div>
       <div class="dashboard-metric-card compact">
+        <div class="dashboard-card-icon subtle">CP</div>
         <span class="label">Cuota promedio</span>
         <div class="big">S/ {{ '%.2f'|format(cuota_promedio) }}</div>
       </div>
       <div class="dashboard-metric-card compact">
+        <div class="dashboard-card-icon subtle">HM</div>
         <span class="label">Historial múltiple</span>
         <div class="big">{{ resumen_prestamos_multiples.socios_multiples or 0 }}</div>
         <div class="small-note">Socios con más de un préstamo histórico en su hoja.</div>
@@ -160,6 +168,204 @@
         <div class="dashboard-metric-card compact">
           <span class="label">Promedio por socio</span>
           <div class="big">S/ {{ '%.1f'|format(periodo_actual_resumen.promedio_por_socio or 0) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Estad&iacute;sticas y tendencias</div>
+      <h3>Evoluci&oacute;n reciente del sistema</h3>
+      <p class="small-note">Compara el per&iacute;odo actual contra el anterior y sigue la tendencia del fondo mensual, la colocaci&oacute;n y el saldo pendiente.</p>
+    </div>
+
+    <div class="dashboard-metric-grid dashboard-metric-grid-secondary trend-stat-grid">
+      {% for card in tendencia_periodos.cards %}
+      <div class="dashboard-metric-card compact trend-card trend-card-{{ card.status }}">
+        <span class="label">{{ card.label }}</span>
+        <div class="big">S/ {{ '%.1f'|format(card.current or 0) }}</div>
+        <div class="trend-delta trend-delta-{{ card.status }}">
+          {% if card.has_previous %}
+            {% if card.direction == 'up' %}&#9650;{% elif card.direction == 'down' %}&#9660;{% else %}&middot;{% endif %}
+            Variaci&oacute;n: S/ {{ '%.1f'|format(card.delta or 0) }}
+            {% if card.delta_pct is not none %}({{ '%.1f'|format(card.delta_pct or 0) }}%){% endif %}
+          {% else %}
+            Sin per&iacute;odo anterior para comparar
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      <div class="dashboard-metric-card compact trend-card trend-card-{{ tendencia_financiera.status }}">
+        <span class="label">{{ tendencia_financiera.label }}</span>
+        <div class="big">S/ {{ '%.1f'|format(tendencia_financiera.current or 0) }}</div>
+        <div class="trend-delta trend-delta-{{ tendencia_financiera.status }}">
+          {% if tendencia_financiera.has_previous %}
+            {% if tendencia_financiera.direction == 'up' %}&#9650;{% elif tendencia_financiera.direction == 'down' %}&#9660;{% else %}&middot;{% endif %}
+            Contra el corte anterior: S/ {{ '%.1f'|format(tendencia_financiera.delta or 0) }}
+            {% if tendencia_financiera.delta_pct is not none %}({{ '%.1f'|format(tendencia_financiera.delta_pct or 0) }}%){% endif %}
+          {% else %}
+            A&uacute;n no hay un corte financiero anterior para comparar
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-main-split">
+      <div class="card">
+        <h3>Lectura r&aacute;pida</h3>
+        <div class="metric"><span>Per&iacute;odos analizados</span><strong>{{ tendencia_periodos.summary.periodos_analizados or 0 }}</strong></div>
+        <div class="metric"><span>Promedio reciente del fondo</span><strong>S/ {{ '%.1f'|format(tendencia_periodos.summary.promedio_fondo or 0) }}</strong></div>
+        <div class="metric"><span>Promedio reciente de colocaci&oacute;n</span><strong>{{ '%.1f'|format(tendencia_periodos.summary.promedio_colocacion_pct or 0) }}%</strong></div>
+        <div class="metric">
+          <span>Mejor fondo mensual</span>
+          <strong>
+            {% if tendencia_periodos.summary.mejor_periodo_fondo %}
+              {{ tendencia_periodos.summary.mejor_periodo_fondo.periodo }} &middot; S/ {{ '%.1f'|format(tendencia_periodos.summary.mejor_periodo_fondo.total_recaudado or 0) }}
+            {% else %}
+              Sin datos
+            {% endif %}
+          </strong>
+        </div>
+        <div class="metric">
+          <span>Mejor colocaci&oacute;n</span>
+          <strong>
+            {% if tendencia_periodos.summary.mejor_periodo_colocacion %}
+              {{ tendencia_periodos.summary.mejor_periodo_colocacion.periodo }} &middot; {{ '%.1f'|format(tendencia_periodos.summary.mejor_periodo_colocacion.colocacion_pct or 0) }}%
+            {% else %}
+              Sin datos
+            {% endif %}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Tendencia reciente del ciclo mensual</h3>
+        <table>
+          <caption>Comparaci&oacute;n de los per&iacute;odos m&aacute;s recientes</caption>
+          <thead><tr><th>Per&iacute;odo</th><th>Total mensual</th><th>Colocado</th><th>Pendiente</th><th>Avance</th></tr></thead>
+          <tbody>
+          {% for row in tendencia_periodos.series %}
+            <tr {% if row.periodo == periodo_actual_resumen.periodo %}class="prestamo-total"{% endif %}>
+              <td>{{ row.periodo }}</td>
+              <td>
+                <div>S/ {{ '%.1f'|format(row.total_recaudado or 0) }}</div>
+                <div class="trend-bar-track"><div class="trend-bar-fill" style="width:{{ row.recaudado_bar_pct or 0 }}%"></div></div>
+              </td>
+              <td>S/ {{ '%.1f'|format(row.total_colocado or 0) }}</td>
+              <td>S/ {{ '%.1f'|format(row.saldo_por_colocar or 0) }}</td>
+              <td>{{ '%.1f'|format(row.colocacion_pct or 0) }}%</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">A&uacute;n no hay suficientes per&iacute;odos para mostrar tendencia.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Gráficos ejecutivos</div>
+      <h3>Lectura visual del sistema</h3>
+      <p class="small-note">Vista rápida del fondo mensual, la colocación, el saldo pendiente y la concentración de la cartera.</p>
+    </div>
+
+    <div class="dashboard-main-split">
+      <div class="card chart-card">
+        <h3>Evolución del fondo y la colocación</h3>
+        <div class="small-note">Comparativo reciente entre total mensual, ya colocado y saldo pendiente.</div>
+        {% if dashboard_visuals.timeline.has_data %}
+        <svg class="dashboard-line-chart" viewBox="0 0 {{ dashboard_visuals.timeline.width }} {{ dashboard_visuals.timeline.height }}" role="img" aria-label="Evolución del fondo mensual">
+          <line x1="18" y1="24" x2="402" y2="24" class="dashboard-chart-grid"></line>
+          <line x1="18" y1="90" x2="402" y2="90" class="dashboard-chart-grid"></line>
+          <line x1="18" y1="162" x2="402" y2="162" class="dashboard-chart-grid"></line>
+          <path d="{{ dashboard_visuals.timeline.recaudado_area }}" class="dashboard-chart-area"></path>
+          <path d="{{ dashboard_visuals.timeline.recaudado_path }}" class="dashboard-chart-line primary"></path>
+          <path d="{{ dashboard_visuals.timeline.colocado_path }}" class="dashboard-chart-line success"></path>
+          <path d="{{ dashboard_visuals.timeline.pendiente_path }}" class="dashboard-chart-line warning"></path>
+        </svg>
+        <div class="dashboard-chart-legend">
+          <span><i class="legend-dot primary"></i>Fondo mensual</span>
+          <span><i class="legend-dot success"></i>Ya colocado</span>
+          <span><i class="legend-dot warning"></i>Saldo pendiente</span>
+        </div>
+        <div class="dashboard-chart-axis">
+          {% for label in dashboard_visuals.timeline.labels %}
+            <span>{{ label }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="small-note">Aún no hay suficientes períodos para dibujar la evolución reciente.</div>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <h3>Composición del período actual</h3>
+        <div class="dashboard-donut-wrap">
+          <div class="dashboard-donut" style="--fill:{{ periodo_actual_resumen.porcentaje_colocado or 0 }}%">
+            <div class="dashboard-donut-center">
+              <strong>{{ '%.1f'|format(periodo_actual_resumen.porcentaje_colocado or 0) }}%</strong>
+              <span>colocado</span>
+            </div>
+          </div>
+          <div class="dashboard-donut-copy">
+            <div class="module-eyebrow">Termómetro</div>
+            <h3>{{ periodo_actual_resumen.periodo }}</h3>
+            <p class="small-note">El anillo resume el avance del fondo del mes y deja visible la brecha que todavía queda pendiente.</p>
+          </div>
+        </div>
+
+        <div class="dashboard-bar-list">
+          {% for item in dashboard_visuals.composition %}
+          <div class="dashboard-bar-item">
+            <div class="metric">
+              <span>{{ item.label }}</span>
+              <strong>S/ {{ '%.1f'|format(item.value or 0) }}</strong>
+            </div>
+            <div class="trend-bar-track"><div class="trend-bar-fill trend-bar-fill-{{ item.tone }}" style="width:{{ item.pct or 0 }}%"></div></div>
+            <div class="small-note">{{ '%.1f'|format(item.pct or 0) }}% del total mensual</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-main-split">
+      <div class="card">
+        <h3>Origen de la colocación</h3>
+        <table>
+          <caption>Fuente de los movimientos detectados en el período actual</caption>
+          <thead><tr><th>Origen</th><th>Eventos</th><th>Intensidad</th></tr></thead>
+          <tbody>
+          {% for item in dashboard_visuals.origins %}
+            <tr>
+              <td>{{ item.label }}</td>
+              <td>{{ item.value }}</td>
+              <td><div class="trend-bar-track"><div class="trend-bar-fill trend-bar-fill-neutral" style="width:{{ item.pct or 0 }}%"></div></div></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="3">Aún no hay movimientos de colocación para este período.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>Mapa de cartera</h3>
+        <div class="dashboard-balance-bars">
+          {% for item in dashboard_visuals.top_balance_bars %}
+          <div class="dashboard-balance-row">
+            <div class="metric">
+              <span>{{ item.label }}</span>
+              <strong>S/ {{ '%.1f'|format(item.value or 0) }}</strong>
+            </div>
+            <div class="trend-bar-track"><div class="trend-bar-fill trend-bar-fill-primary" style="width:{{ item.pct or 0 }}%"></div></div>
+          </div>
+          {% else %}
+          <div class="small-note">No hay saldos suficientes para dibujar el mapa de cartera.</div>
+          {% endfor %}
         </div>
       </div>
     </div>
@@ -317,11 +523,27 @@
 
     <div class="card">
       <h3>Accesos rápidos</h3>
-      <div class="dashboard-links">
-        <a class="btn" href="{{ url_for('main.aportaciones_mensuales', periodo=periodo_actual_resumen.periodo) }}">Abrir aportaciones</a>
-        <a class="btn secondary" href="{{ url_for('main.cierre_mensual', periodo=periodo_actual_resumen.periodo) }}">Abrir cierre mensual</a>
-        <a class="btn secondary" href="{{ url_for('main.nuevos_prestamos', periodo=periodo_actual_resumen.periodo) }}">Abrir nuevos préstamos</a>
-        <a class="btn secondary" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+      <div class="dashboard-quick-grid">
+        <a class="quick-action-card" href="{{ url_for('main.aportaciones_mensuales', periodo=periodo_actual_resumen.periodo) }}">
+          <span class="quick-action-kicker">Período {{ periodo_actual_resumen.periodo }}</span>
+          <strong>Aportaciones mensuales</strong>
+          <small>Revisa cuotas, aportes fijos y detalle mensual por socio.</small>
+        </a>
+        <a class="quick-action-card" href="{{ url_for('main.cierre_mensual', periodo=periodo_actual_resumen.periodo) }}">
+          <span class="quick-action-kicker">Control del mes</span>
+          <strong>Cierre mensual</strong>
+          <small>Valida el estado del período y monitorea el fondo del mes.</small>
+        </a>
+        <a class="quick-action-card" href="{{ url_for('main.nuevos_prestamos', periodo=periodo_actual_resumen.periodo) }}">
+          <span class="quick-action-kicker">Colocación</span>
+          <strong>Nuevos préstamos</strong>
+          <small>Distribuye el fondo y sigue préstamos reservados o aprobados.</small>
+        </a>
+        <a class="quick-action-card" href="{{ url_for('main.reportes') }}">
+          <span class="quick-action-kicker">Seguimiento</span>
+          <strong>Reportes</strong>
+          <small>Consulta saldo actual, multas, historial y trazabilidad.</small>
+        </a>
       </div>
       <div class="small-note" style="margin-top:10px">Usa estos accesos para continuar el ciclo mensual sin salir del panel.</div>
     </div>

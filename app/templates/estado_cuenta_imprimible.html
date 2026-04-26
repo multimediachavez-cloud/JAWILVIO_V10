@@ -3,87 +3,124 @@
 <head>
   <meta charset="utf-8">
   <title>Estado de cuenta - {{ socio.nombre }}</title>
-  <style>
-    body{font-family:Arial,sans-serif;margin:28px;color:#17263c}
-    h1,h2,h3,p{margin:0}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:2px solid #dbe4f0}
-    .brand{display:flex;gap:14px;align-items:flex-start}
-    .brand-logo{width:220px;max-width:100%;height:auto;display:block}
-    .brand-copy h1{font-size:22px;line-height:1.15;margin-bottom:6px}
-    .brand-copy .subtitle{font-size:14px;color:#58708c;margin-bottom:4px}
-    .brand-copy .location{font-size:13px;color:#6a8099}
-    .header-meta{text-align:right;min-width:220px}
-    .header-meta .doc-title{font-size:18px;font-weight:700;margin-bottom:8px}
-    .header-meta .meta-line{font-size:13px;color:#58708c;line-height:1.5}
-    .note{margin:14px 0 18px;padding:12px 14px;border:1px solid #dbe4f0;border-radius:10px;background:#f8fbff}
-    .meta{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
-    .box{border:1px solid #dbe4f0;border-radius:10px;padding:12px}
-    .box strong{display:block;margin-bottom:6px}
-    table{width:100%;border-collapse:collapse;margin-top:14px}
-    th,td{border:1px solid #dbe4f0;padding:8px 10px;font-size:13px}
-    th{background:#f5f8fc}
-    .cronograma-cerrado td{background:#eaf7ea}
-    .text-right{text-align:right}
-    @media print{body{margin:16px}}
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/print_a4.css') }}">
 </head>
-<body>
-  <div class="header">
-    <div class="brand">
-      <img class="brand-logo" src="{{ url_for('static', filename='img/logo_jawilvio_light.svg') }}" alt="Logo JAWILVIO">
-      <div class="brand-copy">
-        <h1>{{ app_nombre }}</h1>
-        <div class="subtitle">Estado de cuenta individual del socio</div>
-        <div class="location">{{ app_ubicacion }}</div>
+<body class="print-report">
+  <main class="print-page">
+    <header class="print-header">
+      <div class="print-brand">
+        <img class="print-brand-logo" src="{{ app_logo }}" alt="Logo institucional">
+        <div class="print-brand-copy">
+          <h1>{{ app_nombre }}</h1>
+          <div class="subtitle">Estado de cuenta individual del socio.</div>
+          <div class="location">{{ app_ubicacion }}</div>
+        </div>
       </div>
+      <div class="print-meta">
+        <div class="print-doc-title">Estado de cuenta imprimible</div>
+        <div class="print-meta-line"><strong>Socio:</strong> {{ socio.nombre }}</div>
+        <div class="print-meta-line"><strong>N°:</strong> {{ socio.numero }}</div>
+        <div class="print-meta-line"><strong>Corte financiero:</strong> {{ periodo_corte_label }}</div>
+        <div class="print-meta-line"><strong>Emitido:</strong> {{ fecha_emision }}</div>
+      </div>
+    </header>
+
+    <section class="print-section">
+      <h2 class="print-section-title">Resumen del socio</h2>
+      <div class="print-summary-grid">
+        <div class="print-card">
+          <div class="print-card-title">Cuotas</div>
+          <div class="print-card-value">{{ socio.plazo_real or socio.plazo_balance or socio.meses or 0 }}</div>
+          <div class="print-card-subvalue">Cronograma vigente</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Saldo actual del préstamo</div>
+          <div class="print-card-value">S/ {{ '%.2f'|format(saldo_actual or 0) }}</div>
+          <div class="print-card-subvalue">Saldo al último corte financiero</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Intereses acumulados</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(resumen.intereses or 0) }}</div>
+          <div class="print-card-subvalue">Interés total del cronograma</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Capital acumulado</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(resumen.capital or 0) }}</div>
+          <div class="print-card-subvalue">Abonos acumulados a capital</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="print-section">
+      <h2 class="print-section-title">Totales del cronograma</h2>
+      <div class="print-band">
+        <div class="print-band-item">
+          <strong>Primera fecha</strong>
+          {{ resumen.primera_fecha or '-' }}
+        </div>
+        <div class="print-band-item">
+          <strong>Última fecha</strong>
+          {{ resumen.ultima_fecha or '-' }}
+        </div>
+        <div class="print-band-item">
+          <strong>Total programado</strong>
+          <span class="print-emphasis">S/ {{ '%.2f'|format(resumen.total_pagable or 0) }}</span>
+        </div>
+      </div>
+    </section>
+
+    {% if periodo_cerrado %}
+    <div class="print-note">
+      Los meses cerrados hasta <strong>{{ periodo_cerrado }}</strong> se resaltan en verde para facilitar el control del cronograma ya consolidado.
     </div>
-    <div class="header-meta">
-      <div class="doc-title">Estado de cuenta imprimible</div>
-      <div class="meta-line"><strong>Socio:</strong> {{ socio.nombre }}</div>
-      <div class="meta-line"><strong>N°:</strong> {{ socio.numero }}</div>
-      <div class="meta-line"><strong>Emitido:</strong> {{ fecha_emision }}</div>
-    </div>
-  </div>
+    {% endif %}
 
-  <div class="meta">
-    <div class="box"><strong>Cuotas</strong>{{ socio.plazo_real or socio.plazo_balance or socio.meses or 0 }}</div>
-    <div class="box"><strong>Saldo actual del préstamo</strong>S/ {{ '%.2f'|format(saldo_actual or 0) }}</div>
-    <div class="box"><strong>Intereses acumulados</strong>S/ {{ '%.2f'|format(resumen.intereses or 0) }}</div>
-    <div class="box"><strong>Capital acumulado</strong>S/ {{ '%.2f'|format(resumen.capital or 0) }}</div>
-  </div>
+    <section class="print-section">
+      <h2 class="print-section-title">Cronograma del socio</h2>
+      <div class="print-table-wrap">
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>Plazo</th>
+              <th>Fecha</th>
+              <th class="text-right">Préstamo</th>
+              <th class="text-right">Interés</th>
+              <th class="text-right">Abono capital</th>
+              <th class="text-right">Cuota</th>
+              <th class="text-right">Saldo restante</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in cuotas %}
+            <tr class="{% if c.periodo_cerrado %}closed-row{% endif %}">
+              <td>{{ c.plazo }}</td>
+              <td>{{ c.fecha or '' }}</td>
+              <td class="text-right">{% if c.prestamo is not none %}S/ {{ '%.2f'|format(c.prestamo) }}{% endif %}</td>
+              <td class="text-right">{% if c.interes is not none %}S/ {{ '%.2f'|format(c.interes) }}{% endif %}</td>
+              <td class="text-right">{% if c.abono_capital is not none %}S/ {{ '%.2f'|format(c.abono_capital) }}{% endif %}</td>
+              <td class="text-right">{% if c.cuota is not none %}S/ {{ '%.2f'|format(c.cuota) }}{% endif %}</td>
+              <td class="text-right">{% if c.saldo is not none %}S/ {{ '%.2f'|format(c.saldo) }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3">Totales del cronograma</td>
+              <td class="text-right">S/ {{ '%.2f'|format(resumen.intereses or 0) }}</td>
+              <td class="text-right">S/ {{ '%.2f'|format(resumen.capital or 0) }}</td>
+              <td class="text-right">S/ {{ '%.2f'|format(resumen.total_pagable or 0) }}</td>
+              <td class="text-right">S/ {{ '%.2f'|format(saldo_actual or 0) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
 
-  {% if periodo_cerrado %}
-  <div class="note">
-    <strong>Meses cerrados resaltados hasta:</strong> {{ periodo_cerrado }}
-  </div>
-  {% endif %}
-
-  <table>
-    <thead>
-      <tr>
-        <th>Plazo</th>
-        <th>Fecha</th>
-        <th>Préstamo</th>
-        <th>Interés</th>
-        <th>Abono capital</th>
-        <th>Cuota</th>
-        <th>Saldo restante de la cuota</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for c in cuotas %}
-      <tr class="{% if c.periodo_cerrado %}cronograma-cerrado{% endif %}">
-        <td>{{ c.plazo }}</td>
-        <td>{{ c.fecha or '' }}</td>
-        <td class="text-right">{% if c.prestamo is not none %}S/ {{ '%.2f'|format(c.prestamo) }}{% endif %}</td>
-        <td class="text-right">{% if c.interes is not none %}S/ {{ '%.2f'|format(c.interes) }}{% endif %}</td>
-        <td class="text-right">{% if c.abono_capital is not none %}S/ {{ '%.2f'|format(c.abono_capital) }}{% endif %}</td>
-        <td class="text-right">{% if c.cuota is not none %}S/ {{ '%.2f'|format(c.cuota) }}{% endif %}</td>
-        <td class="text-right">{% if c.saldo is not none %}S/ {{ '%.2f'|format(c.saldo) }}{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <footer class="print-footer">
+      <div>Documento generado desde el módulo de estado de cuenta.</div>
+      <div>Socio {{ socio.numero }} · {{ socio.nombre }}</div>
+    </footer>
+  </main>
   <script>window.print()</script>
 </body>
 </html>

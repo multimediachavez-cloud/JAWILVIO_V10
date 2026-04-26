@@ -24,11 +24,9 @@ Versión 10 integral del sistema.
 - consulta / consulta123
 
 ## Ejecución
-
 ```bash
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 python run.py
-
-
+```

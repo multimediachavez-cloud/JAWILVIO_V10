@@ -2,15 +2,41 @@
 {% block content %}
 <div class="module-header">
   <div>
-    <div class="module-eyebrow">Padrón</div>
+    <div class="module-eyebrow">Padrón financiero</div>
     <h2>Socios</h2>
     <p class="module-subtitle">Consulta el padrón de socios y, como administrador, registra, actualiza o elimina socios con sus datos principales.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.prestamos') }}">Abrir préstamos</a>
+    <a class="btn secondary" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+  </div>
+</div>
+
+<div class="dashboard-metric-grid dashboard-metric-grid-secondary section">
+  <div class="dashboard-metric-card compact">
+    <span class="label">Socios visibles</span>
+    <div class="big">{{ socios|length }}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Consulta activa</span>
+    <div class="big">{% if q %}Filtrada{% else %}Completa{% endif %}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Búsqueda</span>
+    <div class="big">{% if q %}{{ q }}{% else %}Todos{% endif %}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Gestión</span>
+    <div class="big">{% if current_role == 'Administrador' %}Activa{% else %}Consulta{% endif %}</div>
   </div>
 </div>
 
 <div class="card section">
   <form class="search" method="get">
-    <input type="text" name="q" placeholder="Busca por número, nombre o DNI del socio" value="{{ q }}">
+    <div class="search-field">
+      <label>Buscar socio</label>
+      <input type="text" name="q" placeholder="Busca por número, nombre o DNI del socio" value="{{ q }}">
+    </div>
     <button class="btn">Buscar</button>
   </form>
 </div>
@@ -19,7 +45,7 @@
 <div class="card section">
   <h3>{% if edit_socio %}Editar socio{% else %}Crear socio{% endif %}</h3>
   <p class="small-note">La foto se sube desde la app. Si luego sincronizas desde Excel, el DNI y la foto se conservarán.</p>
-  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+  <form method="post" enctype="multipart/form-data" class="form-grid">
     <input type="hidden" name="action" value="{% if edit_socio %}update{% else %}create{% endif %}">
     <div><label>Número</label><input type="text" name="numero" value="{{ edit_socio.numero if edit_socio else '' }}" placeholder="Ejemplo: 31" required></div>
     <div><label>Apellidos y nombres</label><input type="text" name="nombre" value="{{ edit_socio.nombre if edit_socio else '' }}" placeholder="Escribe el nombre completo" required></div>
@@ -29,7 +55,7 @@
       <input type="file" name="foto_archivo" accept=".jpg,.jpeg,.png,.webp">
       {% if edit_socio and edit_socio.foto_url %}
       <div class="small-note" style="margin-top:8px">Foto actual</div>
-      <img src="{{ edit_socio.foto_url }}" alt="Foto actual de {{ edit_socio.nombre }}" style="width:64px;height:64px;object-fit:cover;border-radius:50%;border:1px solid #d7e1ef;margin-top:6px">
+      <img src="{{ edit_socio.foto_url }}" alt="Foto actual de {{ edit_socio.nombre }}" style="width:64px;height:64px;object-fit:cover;border-radius:14px;border:1px solid #d7e1ef;margin-top:6px;box-shadow:0 8px 18px rgba(16,41,74,.08)">
       {% endif %}
     </div>
     <div><label>Cuotas</label><input type="text" name="meses" value="{{ edit_socio.meses if edit_socio else '' }}" placeholder="Número de cuotas"></div>
@@ -47,7 +73,8 @@
 {% endif %}
 
 <div class="card">
-  <table>
+  <table class="table-uniform-white">
+    <caption>Padrón de socios con saldo vigente</caption>
     <thead>
       <tr>
         <th>N°</th>
@@ -67,7 +94,7 @@
         <td>{{ s.numero }}</td>
         <td>
           {% if s.foto_url %}
-          <img src="{{ s.foto_url }}" alt="Foto de {{ s.nombre }}" style="width:42px;height:42px;object-fit:cover;border-radius:50%;border:1px solid #d7e1ef">
+          <img src="{{ s.foto_url }}" alt="Foto de {{ s.nombre }}" style="width:44px;height:44px;object-fit:cover;border-radius:14px;border:1px solid #d7e1ef;box-shadow:0 6px 14px rgba(16,41,74,.08)">
           {% else %}
           <span class="small-note">Sin foto</span>
           {% endif %}

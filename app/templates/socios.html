@@ -1,24 +1,65 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Socios importados desde el Excel real</h2>
-<form class="search" method="get">
-  <input type="text" name="q" placeholder="Busca por número o nombre del socio" value="{{ q }}">
-  <button class="btn">Buscar</button>
-</form>
-<table>
-  <thead><tr><th>N°</th><th>Apellidos y nombres</th><th>Meses</th><th>Fecha préstamo</th><th>Saldo</th><th>Mes/2026</th><th>Acción</th></tr></thead>
-  <tbody>
-  {% for s in socios %}
-    <tr>
-      <td>{{ s.numero }}</td>
-      <td>{{ s.nombre }}</td>
-      <td>{{ s.plazo_real or s.plazo_balance or s.meses or '' }}</td>
-      <td>{{ s.fecha_prestamo or '' }}</td>
-      <td>S/ {{ '%.1f'|format(s.saldo_periodo or 0) }}</td>
-      <td>{{ s.mes_2026 or '-' }}</td>
-      <td><a class="btn light" href="{{ url_for('main.socio_detalle', numero=s.numero) }}">Abrir estado de cuenta</a></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Padrón financiero</div>
+    <h2>Socios</h2>
+    <p class="module-subtitle">Consulta el padrón de socios, su saldo vigente, fecha de préstamo y acceso directo al estado de cuenta individual.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.prestamos') }}">Abrir préstamos</a>
+    <a class="btn secondary" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+  </div>
+</div>
+
+<div class="dashboard-metric-grid dashboard-metric-grid-secondary section">
+  <div class="dashboard-metric-card compact">
+    <span class="label">Socios visibles</span>
+    <div class="big">{{ socios|length }}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Consulta activa</span>
+    <div class="big">{% if q %}Filtrada{% else %}Completa{% endif %}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Búsqueda</span>
+    <div class="big">{% if q %}{{ q }}{% else %}Todos{% endif %}</div>
+  </div>
+  <div class="dashboard-metric-card compact">
+    <span class="label">Detalle</span>
+    <div class="big">1 clic</div>
+  </div>
+</div>
+
+<div class="card section">
+  <form class="search" method="get">
+    <div class="search-field">
+      <label>Buscar socio</label>
+      <input type="text" name="q" placeholder="Busca por número o nombre del socio" value="{{ q }}">
+    </div>
+    <button class="btn">Buscar</button>
+  </form>
+</div>
+
+<div class="card section">
+  <table class="table-uniform-white">
+    <caption>Padrón de socios con referencia financiera</caption>
+    <thead><tr><th>N°</th><th>Apellidos y nombres</th><th>Cuotas</th><th>Fecha préstamo</th><th>Saldo actual</th><th>Mes/2026</th><th>Acción</th></tr></thead>
+    <tbody>
+    {% for s in socios %}
+      <tr>
+        <td>{{ s.numero }}</td>
+        <td>{{ s.nombre }}</td>
+        <td>{{ s.plazo_real or s.plazo_balance or s.meses or '' }}</td>
+        <td>{{ s.fecha_prestamo or '' }}</td>
+        <td>S/ {{ '%.1f'|format(s.saldo_periodo or 0) }}</td>
+        <td>{{ s.mes_2026 or '-' }}</td>
+        <td><a class="btn light" href="{{ url_for('main.socio_detalle', numero=s.numero) }}">Abrir estado de cuenta</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7">No se encontraron socios con ese criterio.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

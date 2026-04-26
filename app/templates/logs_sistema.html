@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Administración</div>
+    <h2>Logs del sistema</h2>
+    <p class="module-subtitle">Revisa los eventos técnicos, las acciones de usuarios y las operaciones financieras sin salir de la app.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn secondary" href="{{ url_for('main.auditoria') }}">Abrir auditoría</a>
+  </div>
+</div>
+
+<form method="get" class="card section">
+  <div class="log-toolbar">
+    <label>
+      <span class="small-note">Tipo de log</span>
+      <select name="log" class="full-select">
+        {% for log_key, log_data in available_logs.items() %}
+        <option value="{{ log_key }}" {% if selected_log == log_key %}selected{% endif %}>{{ log_data.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span class="small-note">Últimas líneas</span>
+      <select name="limit" class="full-select">
+        {% for limit in [50, 100, 200, 500, 1000] %}
+        <option value="{{ limit }}" {% if selected_limit == limit %}selected{% endif %}>{{ limit }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="log-toolbar-actions">
+      <button class="btn" type="submit">Actualizar vista</button>
+    </div>
+  </div>
+</form>
+
+<form method="post" class="card section">
+  <input type="hidden" name="log" value="{{ selected_log }}">
+  <input type="hidden" name="limit" value="{{ selected_limit }}">
+  <div class="log-action-bar">
+    <button class="btn secondary" type="submit" name="action" value="download">Descargar log actual</button>
+    <button class="btn warning" type="submit" name="action" value="clear" onclick="return confirm('Se limpiará el contenido del log seleccionado. ¿Deseas continuar?');">Limpiar log actual</button>
+  </div>
+  <div class="small-note" style="margin-top:10px">Solo el administrador puede descargar o limpiar el archivo que estás viendo en esta pantalla.</div>
+</form>
+
+<div class="grid section">
+  <div class="card">
+    <h3>Archivo</h3>
+    <div class="log-stat-value">{{ summary.filename }}</div>
+    <div class="small-note">Ubicación: {{ summary.path }}</div>
+  </div>
+  <div class="card">
+    <h3>Última actualización</h3>
+    <div class="log-stat-value">{{ summary.last_modified }}</div>
+    <div class="small-note">Se muestra la cola más reciente del archivo.</div>
+  </div>
+  <div class="card">
+    <h3>Tamaño</h3>
+    <div class="log-stat-value">{{ summary.file_size_kb }} KB</div>
+    <div class="small-note">Solo lectura desde la consola administrativa.</div>
+  </div>
+  <div class="card">
+    <h3>Líneas cargadas</h3>
+    <div class="log-stat-value">{{ summary.line_count }}</div>
+    <div class="small-note">Límite actual: {{ selected_limit }} líneas.</div>
+  </div>
+</div>
+
+<div class="card section">
+  <h3>Lectura rápida del log</h3>
+  {% if not summary.exists %}
+  <div class="small-note">El archivo todavía no existe. Aparecerá automáticamente cuando el sistema registre eventos de este tipo.</div>
+  {% elif not lines %}
+  <div class="small-note">El archivo existe, pero aún no contiene líneas visibles para el rango solicitado.</div>
+  {% else %}
+  <div class="log-viewer">
+    {% for line in lines %}
+    <div class="log-line">{{ line }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

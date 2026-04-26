@@ -2,13 +2,19 @@
 import sqlite3, csv, io, json, zipfile
 import os
 import re
+import logging
+import unicodedata
 from functools import wraps
 from datetime import datetime, date
 import calendar
-from werkzeug.utils import secure_filename
+from flask import jsonify
+from .core.database import get_connection
+from .core.logging_config import log_financial_event, log_system_event, log_user_action_event
 from .db import import_excel_if_needed
-from flask import Blueprint, render_template, request, redirect, url_for, session, current_app, make_response, flash, jsonify
-from flask import Response
+from .utils.security import hash_password, is_password_hashed, verify_password
+from .utils.totp import build_totp_uri, generate_totp_secret, verify_totp_code
+from .utils.uploads import build_static_upload_url
+from .utils.validation import safe_float, safe_int
 
 bp = Blueprint('main', __name__)
 
@@ -18,7 +24,8 @@ REUNION_TIPOS_VIA = [
     ('Av.', 'Avenida'),
 ]
 PERMISO_MOTIVOS = ['Personal', 'Familiar', 'Salud', 'Trabajo', 'Otros']
-PERMISO_DOCUMENT_EXTENSIONS = {'.pdf', '.doc', '.docx'}
+MULTA_ASISTENCIA_ESTADOS = {'Faltó', 'Tardanza'}
+MULTA_COBRO_ESTADOS = ('Pendiente', 'Cobrada')
 
 MONTH_LABELS = {
     '01': 'ENERO',
@@ -41,115 +48,197 @@ ROLE_VIEW_ACCESS = {
         'main.dashboard', 'main.socios', 'main.socio_detalle', 'main.prestamo_excel_detalle',
         'main.historial_prestamo_detalle', 'main.historial_prestamo_comparar', 'main.prestamos',
         'main.aportaciones_mensuales', 'main.aportaciones_mensuales_imprimible', 'main.cierre_mensual', 'main.nuevos_prestamos',
-        'main.estado_cuenta', 'main.estado_cuenta_imprimible', 'main.reuniones', 'main.reportes',
+        'main.estado_cuenta', 'main.estado_cuenta_imprimible', 'main.reuniones', 'main.multas_asistencia', 'main.reportes',
         'main.saldo_actual', 'main.fondo_total', 'main.reporte_mensual_csv', 'main.graficos',
         'main.pdf_estado_general', 'main.reporte_imprimible', 'main.reporte_morosos_csv',
+        'main.api_socios_collection', 'main.api_socio_detail',
+        'main.api_reuniones_collection', 'main.api_reunion_detail',
+        'main.api_permisos_collection', 'main.api_permiso_detail',
+        'main.api_caja_collection', 'main.api_caja_detail', 'main.api_caja_detail_items',
         'main.mi_cuenta',
     },
     'Secretario': {
         'main.dashboard', 'main.socios', 'main.socio_detalle', 'main.prestamo_excel_detalle',
         'main.historial_prestamo_detalle', 'main.historial_prestamo_comparar', 'main.prestamos',
-        'main.estado_cuenta', 'main.estado_cuenta_imprimible', 'main.reuniones', 'main.asistencia',
+        'main.estado_cuenta', 'main.estado_cuenta_imprimible', 'main.reuniones', 'main.asistencia', 'main.multas_asistencia',
         'main.reportes', 'main.saldo_actual', 'main.graficos', 'main.pdf_estado_general',
+        'main.api_socios_collection', 'main.api_socio_detail',
+        'main.api_reuniones_collection', 'main.api_reunion_detail',
+        'main.api_permisos_collection', 'main.api_permiso_detail',
+        'main.api_caja_collection', 'main.api_caja_detail', 'main.api_caja_detail_items',
         'main.reporte_imprimible', 'main.reporte_morosos_csv', 'main.mi_cuenta',
     },
     'Consulta': {
         'main.dashboard', 'main.socios', 'main.socio_detalle', 'main.prestamo_excel_detalle',
         'main.historial_prestamo_detalle', 'main.historial_prestamo_comparar', 'main.prestamos',
         'main.aportaciones_mensuales', 'main.aportaciones_mensuales_imprimible', 'main.cierre_mensual', 'main.nuevos_prestamos',
-        'main.estado_cuenta', 'main.estado_cuenta_imprimible', 'main.reuniones', 'main.asistencia',
+        'main.estado_cuenta', 'main.estado_cuenta_imprimible', 'main.reuniones', 'main.asistencia', 'main.multas_asistencia',
         'main.reportes', 'main.saldo_actual', 'main.fondo_total', 'main.reporte_mensual_csv',
         'main.graficos', 'main.pdf_estado_general', 'main.reporte_imprimible', 'main.reporte_morosos_csv',
+        'main.api_socios_collection', 'main.api_socio_detail',
+        'main.api_reuniones_collection', 'main.api_reunion_detail',
+        'main.api_permisos_collection', 'main.api_permiso_detail',
+        'main.api_caja_collection', 'main.api_caja_detail', 'main.api_caja_detail_items',
         'main.mi_cuenta',
     },
 }
 
 ROLE_WRITE_ACCESS = {
     'Administrador': {'*'},
-    'Tesorero': {'main.cierre_mensual', 'main.nuevos_prestamos'},
-    'Secretario': {'main.asistencia', 'main.reuniones'},
+    'Tesorero': {'main.cierre_mensual', 'main.nuevos_prestamos', 'main.multas_asistencia'},
+    'Secretario': {
+        'main.asistencia', 'main.reuniones',
+        'main.api_reuniones_collection', 'main.api_reunion_detail',
+        'main.api_permisos_collection', 'main.api_permiso_detail',
+    },
     'Consulta': set(),
 }
 
 
 def connect_db():
-    conn = sqlite3.connect(current_app.config['DATABASE'])
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def build_socio_photo_url(foto):
-    if not foto:
-        return None
-    if foto.startswith('http://') or foto.startswith('https://') or foto.startswith('/'):
-        return foto
-    return url_for('static', filename=foto.replace('\\', '/'))
-
-
-def build_permiso_document_url(documento):
-    if not documento:
-        return None
-    if documento.startswith('http://') or documento.startswith('https://') or documento.startswith('/'):
-        return documento
-    return url_for('static', filename=documento.replace('\\', '/'))
-
-
-def save_socio_photo(file_storage, socio_numero):
-    if not file_storage or not file_storage.filename:
-        return None
-    filename = secure_filename(file_storage.filename)
-    if not filename:
-        return None
-    _, ext = os.path.splitext(filename)
-    ext = ext.lower()
-    if ext not in {'.jpg', '.jpeg', '.png', '.webp'}:
-        return False
-    upload_dir = current_app.config['SOCIOS_PHOTO_UPLOAD_DIR']
-    os.makedirs(upload_dir, exist_ok=True)
-    final_name = f"socio_{socio_numero}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
-    final_path = os.path.join(upload_dir, final_name)
-    file_storage.save(final_path)
-    return f"uploads/socios/{final_name}"
-
-
-def save_permiso_document(file_storage, periodo, socio_numero):
-    if not file_storage or not file_storage.filename:
-        return None
-    filename = secure_filename(file_storage.filename)
-    if not filename:
-        return None
-    _, ext = os.path.splitext(filename)
-    ext = ext.lower()
-    if ext not in PERMISO_DOCUMENT_EXTENSIONS:
-        return False
-    upload_dir = current_app.config['PERMISOS_UPLOAD_DIR']
-    os.makedirs(upload_dir, exist_ok=True)
-    final_name = f"permiso_{periodo}_{socio_numero}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
-    final_path = os.path.join(upload_dir, final_name)
-    file_storage.save(final_path)
-    return f"uploads/permisos/{final_name}"
-
-
-def delete_permiso_document_if_local(documento):
-    if not documento or documento.startswith('http://') or documento.startswith('https://') or documento.startswith('/'):
-        return
-    full_path = os.path.join(current_app.static_folder, documento.replace('/', os.sep))
-    if os.path.exists(full_path):
+    try:
+        return get_connection()
+    except Exception:
         try:
-            os.remove(full_path)
-        except OSError:
-            pass
+            database_name = current_app.config.get('DATABASE')
+        except Exception:
+            database_name = None
+        log_system_event(
+            'No se pudo abrir la conexión a la base de datos',
+            level=logging.ERROR,
+            exc_info=True,
+            database=database_name,
+        )
+        raise
 
 
-def delete_socio_photo_if_local(foto):
-    if not foto or foto.startswith('http://') or foto.startswith('https://') or foto.startswith('/'):
-        return
-    full_path = os.path.join(current_app.static_folder, foto.replace('/', os.sep))
-    if os.path.exists(full_path):
-        try:
-            os.remove(full_path)
-        except OSError:
-            pass
+def build_branding_logo_url(documento):
+    """Return the configured logo URL, falling back to the bundled default."""
+    return build_static_upload_url(documento) or url_for('static', filename='img/logo_jawilvio_light.svg')
+
+
+def is_api_request(endpoint=None):
+    endpoint = endpoint or request.endpoint or ''
+    return request.path.startswith('/api/') or endpoint.startswith('main.api_')
+
+
+def api_response(payload, status=200):
+    response = make_response(jsonify(payload), status)
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+
+def api_error(message, status=400, **extra):
+    payload = {'ok': False, 'message': message}
+    payload.update(extra)
+    return api_response(payload, status=status)
+
+
+def api_request_data():
+    if request.is_json:
+        data = request.get_json(silent=True)
+        return data if isinstance(data, dict) else {}
+    return request.form.to_dict()
+
+
+def clear_pending_two_factor_session():
+    """Remove any incomplete 2FA login challenge from the session."""
+    for key in (
+        'pending_2fa_user_id',
+        'pending_2fa_username',
+        'pending_2fa_role',
+        'pending_2fa_started_at',
+    ):
+        session.pop(key, None)
+
+
+def finalize_login_session(user_row):
+    """Persist the authenticated session after password and 2FA checks."""
+    session['user_id'] = user_row['id']
+    session['username'] = user_row['username']
+    session['role'] = user_row['role']
+    clear_pending_two_factor_session()
+
+def serialize_socio_api(row):
+    row_dict = dict(row)
+    return {
+        'id': row_dict.get('id'),
+        'numero': row_dict.get('numero'),
+        'nombre': row_dict.get('nombre'),
+        'dni': row_dict.get('dni'),
+        'foto': row_dict.get('foto'),
+        'foto_url': build_static_upload_url(row_dict.get('foto')),
+        'meses': row_dict.get('meses'),
+        'plazo_balance': row_dict.get('plazo_balance'),
+        'cuotas': row_dict.get('plazo_real') or row_dict.get('meses'),
+        'fecha_prestamo': row_dict.get('fecha_prestamo'),
+        'saldo_base': round(float(row_dict.get('saldo') or 0), 1),
+        'saldo_actual': round(float(row_dict.get('saldo_periodo') or row_dict.get('saldo') or 0), 1),
+        'mes_2026': row_dict.get('mes_2026'),
+        'reunion': row_dict.get('reunion'),
+        'permisos': row_dict.get('permisos'),
+    }
+
+
+def serialize_reunion_api(row):
+    if not row:
+        return None
+    lugar = ' '.join(
+        [parte.strip() for parte in [(row['tipo_via'] or ''), (row['direccion_reunion'] or '')] if parte and parte.strip()]
+    ).strip() or '-'
+    return {
+        'periodo': row['periodo'],
+        'socio_numero': row['socio_numero'],
+        'socio_nombre': row['socio_nombre'],
+        'estado': row['estado'],
+        'fecha_programada': row['fecha_programada'],
+        'fecha_realizada': row['fecha_realizada'],
+        'tipo_via': row['tipo_via'],
+        'direccion_reunion': row['direccion_reunion'],
+        'lugar_reunion': lugar,
+        'observacion': row['observacion'],
+        'actualizado_por': row['actualizado_por'],
+        'creado_en': row['creado_en'],
+        'actualizado_en': row['actualizado_en'],
+    }
+
+
+def serialize_permiso_api(row):
+    if not row:
+        return None
+    return {
+        'id': row['id'],
+        'periodo': row['periodo'],
+        'socio_numero': row['socio_numero'],
+        'socio_nombre': row['socio_nombre'],
+        'fecha_permiso': row['fecha_permiso'],
+        'motivo': row['motivo'],
+        'documento': row['documento'],
+        'documento_url': build_static_upload_url(row['documento']),
+        'observacion': row['observacion'],
+        'registrado_por': row['registrado_por'],
+        'creado_en': row['creado_en'],
+    }
+
+
+def serialize_caja_item_api(row):
+    return {
+        'socio_numero': row['socio_numero'],
+        'socio_nombre': row['socio_nombre'],
+        'cuotas': row['cuotas'],
+        'fecha_prestamo': row['fecha_prestamo'],
+        'cuota_plazo': row['cuota_plazo'],
+        'cuota_fecha': row['cuota_fecha'],
+        'cuota_prestamo': round(float(row['cuota_prestamo'] or 0), 1),
+        'cuota_interes': round(float(row['cuota_interes'] or 0), 1),
+        'cuota_capital': round(float(row['cuota_capital'] or 0), 1),
+        'aporte_mensual': round(float(row['aporte_mensual'] or 0), 1),
+        'total_mes': round(float(row['total_mes'] or 0), 1),
+        'saldo_actual': round(float(row['saldo_actual'] or 0), 1),
+        'fuente_saldo': row['fuente_saldo'],
+    }
 
 
 def role_can_access_endpoint(role, endpoint, write=False):
@@ -184,6 +273,14 @@ def enforce_role_permissions():
         if user_row and user_row['estado'] == 'Suspendido':
             usuario = session.get('username', 'desconocido')
             session.clear()
+            log_system_event(
+                'Intento de acceso bloqueado por usuario suspendido',
+                level=logging.WARNING,
+                usuario=usuario,
+                endpoint=endpoint,
+            )
+            if is_api_request(endpoint):
+                return api_error('Tu usuario está suspendido. Contacta al administrador.', status=403)
             flash('Tu usuario está suspendido. Contacta al administrador.')
             try:
                 log_action(usuario, 'Sesión cerrada por suspensión', 'El usuario intentó acceder estando suspendido.')
@@ -197,8 +294,28 @@ def enforce_role_permissions():
         return None
 
     if write:
+        log_system_event(
+            'Acción bloqueada por permisos insuficientes',
+            level=logging.WARNING,
+            usuario=session.get('username'),
+            rol=role,
+            endpoint=endpoint,
+            metodo=request.method,
+        )
+        if is_api_request(endpoint):
+            return api_error('Tu rol no tiene permiso para realizar esta acción.', status=403)
         flash('Tu rol no tiene permiso para realizar esta acción.')
     else:
+        log_system_event(
+            'Acceso de lectura bloqueado por permisos insuficientes',
+            level=logging.WARNING,
+            usuario=session.get('username'),
+            rol=role,
+            endpoint=endpoint,
+            metodo=request.method,
+        )
+        if is_api_request(endpoint):
+            return api_error('Tu rol no tiene acceso a este módulo.', status=403)
         flash('Tu rol no tiene acceso a este módulo.')
     return redirect(url_for('main.dashboard'))
 
@@ -219,7 +336,15 @@ def loan_title_visible(iso_date, explicit_title=None, fallback='-'):
     return loan_title_from_date(iso_date, fallback)
 
 
-def apply_excel_loan_as_active(conn, socio_numero, prestamo_excel_id, titulo_visible=None, saldo_base_ref=None, prestamo_adicional_ref=None):
+def update_excel_loan_admin_metadata(
+    conn,
+    socio_numero,
+    prestamo_excel_id,
+    titulo_visible=None,
+    saldo_base_ref=None,
+    prestamo_adicional_ref=None,
+    fecha_inicio_manual=None,
+):
     prestamo = conn.execute(
         """
         SELECT *
@@ -232,13 +357,141 @@ def apply_excel_loan_as_active(conn, socio_numero, prestamo_excel_id, titulo_vis
         return None
 
     titulo_visible = (titulo_visible or '').strip() or (prestamo['titulo_manual'] or prestamo['titulo'] or None)
+    fecha_inicio_resuelta = (fecha_inicio_manual or prestamo['fecha_inicio_manual'] or prestamo['fecha_inicio'] or '').strip() or None
+    max_plazo = conn.execute(
+        """
+        SELECT COALESCE(MAX(plazo), 0)
+        FROM prestamos_excel_historial_cuotas
+        WHERE prestamo_excel_id=?
+        """,
+        (prestamo_excel_id,),
+    ).fetchone()[0]
+    fecha_fin_resuelta = add_months_iso(fecha_inicio_resuelta, int(max_plazo or 0)) if fecha_inicio_resuelta else prestamo['fecha_fin']
+    conn.execute(
+        """
+        UPDATE prestamos_excel_historial
+        SET titulo_manual=?,
+            saldo_base_ref=COALESCE(?, saldo_base_ref),
+            prestamo_adicional_ref=COALESCE(?, prestamo_adicional_ref),
+            fecha_inicio_manual=?,
+            fecha_fin_manual=?,
+            fecha_inicio=?,
+            fecha_fin=?
+        WHERE id=?
+        """,
+        (
+            titulo_visible,
+            saldo_base_ref,
+            prestamo_adicional_ref,
+            fecha_inicio_resuelta,
+            fecha_fin_resuelta,
+            fecha_inicio_resuelta,
+            fecha_fin_resuelta,
+            prestamo_excel_id,
+        ),
+    )
+    if fecha_inicio_resuelta:
+        cuota_rows = conn.execute(
+            """
+            SELECT id, plazo
+            FROM prestamos_excel_historial_cuotas
+            WHERE prestamo_excel_id=?
+            ORDER BY plazo, id
+            """,
+            (prestamo_excel_id,),
+        ).fetchall()
+        for cuota_row in cuota_rows:
+            conn.execute(
+                """
+                UPDATE prestamos_excel_historial_cuotas
+                SET fecha=?
+                WHERE id=?
+                """,
+                (add_months_iso(fecha_inicio_resuelta, int(cuota_row['plazo'] or 0)), cuota_row['id']),
+            )
+    return conn.execute(
+        """
+        SELECT *
+        FROM prestamos_excel_historial
+        WHERE id=? AND socio_numero=?
+        """,
+        (prestamo_excel_id, socio_numero),
+    ).fetchone()
+
+
+def sync_saldo_history_for_socio(conn, socio_numero):
+    historial_periodos = conn.execute(
+        """
+        SELECT periodo
+        FROM saldo_historico_mensual
+        WHERE socio_numero=?
+        ORDER BY periodo
+        """,
+        (socio_numero,),
+    ).fetchall()
+    for row in historial_periodos:
+        periodo = row['periodo']
+        saldo_row = conn.execute(
+            """
+            SELECT saldo
+            FROM cuotas
+            WHERE socio_numero=?
+              AND fecha IS NOT NULL
+              AND fecha <= ?
+              AND plazo BETWEEN 0 AND 240
+            ORDER BY fecha DESC, plazo DESC
+            LIMIT 1
+            """,
+            (socio_numero, f'{periodo}-31'),
+        ).fetchone()
+        if saldo_row and saldo_row['saldo'] is not None:
+            conn.execute(
+                """
+                UPDATE saldo_historico_mensual
+                SET saldo=?
+                WHERE socio_numero=? AND periodo=?
+                """,
+                (saldo_row['saldo'], socio_numero, periodo),
+            )
+
+
+def recalculate_periods_from(conn, start_period=None):
+    periodos = [row['periodo'] for row in conn.execute("SELECT periodo FROM periodos ORDER BY periodo").fetchall()]
+    for periodo in periodos:
+        if start_period and periodo < start_period:
+            continue
+        ensure_monthly_collections(conn, periodo)
+
+
+def apply_excel_loan_as_active(
+    conn,
+    socio_numero,
+    prestamo_excel_id,
+    titulo_visible=None,
+    saldo_base_ref=None,
+    prestamo_adicional_ref=None,
+    fecha_inicio_manual=None,
+):
+    prestamo = update_excel_loan_admin_metadata(
+        conn,
+        socio_numero,
+        prestamo_excel_id,
+        titulo_visible=titulo_visible,
+        saldo_base_ref=saldo_base_ref,
+        prestamo_adicional_ref=prestamo_adicional_ref,
+        fecha_inicio_manual=fecha_inicio_manual,
+    )
+    if not prestamo:
+        return None
+
+    start_period_candidates = [value[:7] for value in (
+        prestamo['fecha_inicio_manual'],
+        prestamo['fecha_inicio'],
+        fecha_inicio_manual,
+    ) if value]
     conn.execute(
         "UPDATE prestamos_excel_historial SET es_activo=CASE WHEN id=? THEN 1 ELSE 0 END WHERE socio_numero=?",
         (prestamo_excel_id, socio_numero),
-    )
-    conn.execute(
-        "UPDATE prestamos_excel_historial SET titulo_manual=?, saldo_base_ref=COALESCE(?, saldo_base_ref), prestamo_adicional_ref=COALESCE(?, prestamo_adicional_ref) WHERE id=?",
-        (titulo_visible, saldo_base_ref, prestamo_adicional_ref, prestamo_excel_id),
     )
     conn.execute("DELETE FROM cuotas WHERE socio_numero=?", (socio_numero,))
     cronograma = conn.execute(
@@ -277,19 +530,90 @@ def apply_excel_loan_as_active(conn, socio_numero, prestamo_excel_id, titulo_vis
         WHERE numero=?
         """,
         (
-            prestamo['fecha_inicio'],
+            prestamo['fecha_inicio_manual'] or prestamo['fecha_inicio'],
             prestamo['plazo_total'],
             prestamo['plazo_total'],
             socio_numero,
         ),
     )
-    periodo_oficial = str(get_config_value(conn, 'resumen_financiero_periodo_oficial', '2026-03') or '2026-03')
-    periodos = [row['periodo'] for row in conn.execute("SELECT periodo FROM periodos ORDER BY periodo").fetchall()]
-    for periodo in periodos:
-        if periodo == periodo_oficial:
-            continue
-        ensure_monthly_collections(conn, periodo)
+    sync_saldo_history_for_socio(conn, socio_numero)
+    recalculate_periods_from(conn, min(start_period_candidates) if start_period_candidates else None)
+    log_financial_event(
+        'Préstamo histórico aplicado como vigente',
+        socio_numero=socio_numero,
+        prestamo_excel_id=prestamo_excel_id,
+        titulo_visible=titulo_visible or prestamo['titulo_manual'] or prestamo['titulo'],
+        fecha_inicio=prestamo['fecha_inicio_manual'] or prestamo['fecha_inicio'],
+        fecha_fin=prestamo['fecha_fin_manual'] or prestamo['fecha_fin'],
+        saldo_base_ref=saldo_base_ref,
+        prestamo_adicional_ref=prestamo_adicional_ref,
+    )
     return prestamo
+
+
+def process_excel_loan_admin_update(conn, socio_numero, loan_block_id, redirect_endpoint, **redirect_values):
+    """Handle the admin correction form for a historical Excel loan block."""
+    titulo_visible = request.form.get('titulo_visible', '').strip()
+    fecha_inicio_manual = request.form.get('fecha_inicio_manual', '').strip()
+    saldo_base_ref_raw = request.form.get('saldo_base_ref', '').strip()
+    prestamo_adicional_ref_raw = request.form.get('prestamo_adicional_ref', '').strip()
+    submit_mode = (request.form.get('submit_mode', 'apply') or 'apply').strip()
+    try:
+        saldo_base_ref = round(float(saldo_base_ref_raw), 1) if saldo_base_ref_raw else None
+    except Exception:
+        saldo_base_ref = None
+    try:
+        prestamo_adicional_ref = round(float(prestamo_adicional_ref_raw), 1) if prestamo_adicional_ref_raw else None
+    except Exception:
+        prestamo_adicional_ref = None
+
+    prestamo_actualizado = update_excel_loan_admin_metadata(
+        conn,
+        socio_numero,
+        loan_block_id,
+        titulo_visible=titulo_visible,
+        saldo_base_ref=saldo_base_ref,
+        prestamo_adicional_ref=prestamo_adicional_ref,
+        fecha_inicio_manual=fecha_inicio_manual,
+    )
+    if not prestamo_actualizado:
+        flash('No se encontró el préstamo histórico solicitado.')
+        return redirect(url_for(redirect_endpoint, **redirect_values))
+
+    if submit_mode == 'apply' or prestamo_actualizado['es_activo']:
+        prestamo_aplicado = apply_excel_loan_as_active(
+            conn,
+            socio_numero,
+            loan_block_id,
+            titulo_visible=titulo_visible,
+            saldo_base_ref=saldo_base_ref,
+            prestamo_adicional_ref=prestamo_adicional_ref,
+            fecha_inicio_manual=fecha_inicio_manual,
+        )
+        accion_log = 'Corrección de préstamo histórico vigente'
+        detalle_log = (
+            f'Socio {socio_numero}: bloque {loan_block_id} reaplicado con fecha '
+            f'{fecha_inicio_manual or prestamo_aplicado["fecha_inicio_manual"] or prestamo_aplicado["fecha_inicio"]} '
+            f'y título visible "{titulo_visible or prestamo_aplicado["titulo"]}".'
+        )
+        mensaje_flash = 'Corrección administrativa guardada y préstamo vigente recalculado correctamente.'
+    else:
+        prestamo_aplicado = prestamo_actualizado
+        accion_log = 'Corrección administrativa de préstamo histórico'
+        detalle_log = (
+            f'Socio {socio_numero}: bloque {loan_block_id} actualizado con fecha '
+            f'{fecha_inicio_manual or prestamo_actualizado["fecha_inicio_manual"] or prestamo_actualizado["fecha_inicio"]} '
+            f'y título visible "{titulo_visible or prestamo_actualizado["titulo"]}".'
+        )
+        mensaje_flash = 'Corrección administrativa guardada correctamente.'
+    conn.commit()
+    log_action(
+        session.get('username', 'admin'),
+        accion_log,
+        detalle_log,
+    )
+    flash(mensaje_flash)
+    return redirect(url_for(redirect_endpoint, **redirect_values))
 
 
 def create_manual_excel_loan(conn, socio_numero, socio_nombre, titulo_visible, fecha_inicio, monto, cuotas, tasa_mensual, aplicar_como_vigente=False, saldo_base_ref=None, prestamo_adicional_ref=None):
@@ -352,6 +676,20 @@ def create_manual_excel_loan(conn, socio_numero, socio_nombre, titulo_visible, f
         )
     if aplicar_como_vigente:
         apply_excel_loan_as_active(conn, socio_numero, prestamo_excel_id, titulo_visible, saldo_base_ref, prestamo_adicional_ref)
+    log_financial_event(
+        'Préstamo histórico manual creado',
+        socio_numero=socio_numero,
+        socio_nombre=socio_nombre,
+        prestamo_excel_id=prestamo_excel_id,
+        titulo_visible=titulo_visible,
+        fecha_inicio=fecha_inicio,
+        monto=round(monto, 1),
+        cuotas=cuotas,
+        tasa_mensual=tasa_mensual,
+        aplicar_como_vigente=aplicar_como_vigente,
+        saldo_base_ref=saldo_base_ref,
+        prestamo_adicional_ref=prestamo_adicional_ref,
+    )
     return prestamo_excel_id
 
 
@@ -469,14 +807,147 @@ def get_period_placement_status(conn, periodo, fondo_total):
     }
 
 
-def log_action(usuario, accion, detalle=''):
-    with connect_db() as conn:
-        conn.execute("INSERT INTO auditoria(usuario, accion, detalle) VALUES(?,?,?)", (usuario, accion, detalle))
-        conn.commit()
+def _normalize_log_text(value):
+    text = str(value or '').strip().lower()
+    if not text:
+        return ''
+    normalized = unicodedata.normalize('NFD', text)
+    return ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
+
+
+def _is_financial_action(action_name):
+    normalized_action = _normalize_log_text(action_name)
+    finance_keywords = (
+        'prestamo',
+        'multa',
+        'cierre',
+        'apertura de periodo',
+        'aplicacion de sugerencia',
+        'colocacion',
+        'fondo',
+        'caja',
+    )
+    return any(keyword in normalized_action for keyword in finance_keywords)
+
+
+def _serialize_audit_payload(value):
+    if value is None:
+        return None
+    if isinstance(value, sqlite3.Row):
+        value = dict(value)
+    elif hasattr(value, 'to_dict') and callable(getattr(value, 'to_dict')):
+        value = value.to_dict()
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def log_action(
+    usuario,
+    accion,
+    detalle='',
+    categoria='usuario',
+    modulo=None,
+    entidad=None,
+    entidad_id=None,
+    periodo=None,
+    antes=None,
+    despues=None,
+    nivel='INFO',
+    metadata=None,
+):
+    metadata_payload = dict(metadata or {})
+    try:
+        metadata_payload.setdefault('endpoint', request.endpoint)
+        metadata_payload.setdefault('method', request.method)
+        metadata_payload.setdefault('ip', request.headers.get('X-Forwarded-For', request.remote_addr))
+        metadata_payload.setdefault('user_agent', request.user_agent.string)
+    except RuntimeError:
+        pass
+
+    try:
+        with connect_db() as conn:
+            conn.execute(
+                """
+                INSERT INTO auditoria(
+                    usuario, accion, detalle, categoria, modulo, entidad, entidad_id, periodo,
+                    nivel, antes_json, despues_json, metadata_json
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    usuario,
+                    accion,
+                    str(detalle or ''),
+                    categoria,
+                    modulo,
+                    entidad,
+                    str(entidad_id) if entidad_id is not None else None,
+                    periodo,
+                    str(nivel or 'INFO').upper(),
+                    _serialize_audit_payload(antes),
+                    _serialize_audit_payload(despues),
+                    _serialize_audit_payload(metadata_payload) if metadata_payload else None,
+                ),
+            )
+            conn.commit()
+    except Exception:
+        log_system_event(
+            'No se pudo registrar la auditoría en base de datos',
+            level=logging.ERROR,
+            exc_info=True,
+            usuario=usuario,
+            accion=accion,
+            detalle=detalle,
+            categoria=categoria,
+            modulo=modulo,
+            entidad=entidad,
+            entidad_id=entidad_id,
+            periodo=periodo,
+        )
+
+    log_user_action_event(
+        accion,
+        usuario=usuario,
+        detalle=detalle,
+        categoria=categoria,
+        modulo=modulo,
+        entidad=entidad,
+        entidad_id=entidad_id,
+        periodo=periodo,
+    )
+
+    if categoria == 'finanzas' or _is_financial_action(accion):
+        log_financial_event(
+            accion,
+            usuario=usuario,
+            detalle=detalle,
+            categoria=categoria,
+            modulo=modulo,
+            entidad=entidad,
+            entidad_id=entidad_id,
+            periodo=periodo,
+        )
 
 
 def get_default_period(conn):
     return datetime.now().strftime('%Y-%m')
+
+
+def get_period_row(conn, periodo):
+    return conn.execute("SELECT * FROM periodos WHERE periodo=?", (periodo,)).fetchone()
+
+
+def is_period_closed(period_row):
+    return bool(period_row and str(period_row['estado'] or '').strip() == 'Cerrado')
+
+
+def get_period_write_lock_message(periodo):
+    return f'El período {periodo} ya está cerrado y no admite cambios operativos.'
+
+
+def ensure_period_is_writable(conn, periodo):
+    period_row = get_period_row(conn, periodo)
+    if is_period_closed(period_row):
+        return False, get_period_write_lock_message(periodo), period_row
+    return True, None, period_row
 
 
 def get_next_period(periodo):
@@ -540,21 +1011,12 @@ def ensure_monthly_collections(conn, periodo):
     except Exception:
         aporte_mensual = 150.0
 
-    periodo_actual_sistema = get_default_period(conn)
-    periodo_existente = conn.execute(
-        "SELECT estado FROM periodos WHERE periodo=?",
-        (periodo,),
-    ).fetchone()
+    periodo_existente = get_period_row(conn, periodo)
     obligaciones_existentes = conn.execute(
         "SELECT COUNT(*) FROM obligaciones_mensuales WHERE periodo=?",
         (periodo,),
     ).fetchone()[0]
-    if (
-        periodo_existente
-        and periodo_existente['estado'] == 'Cerrado'
-        and periodo < periodo_actual_sistema
-        and obligaciones_existentes > 0
-    ):
+    if is_period_closed(periodo_existente) and obligaciones_existentes > 0:
         return
 
     conn.execute(
@@ -861,6 +1323,172 @@ def get_config_value(conn, key, default_value):
     return row['valor'] if row and row['valor'] not in (None, '') else default_value
 
 
+def get_float_config_value(conn, key, default_value=0.0):
+    try:
+        return float(get_config_value(conn, key, default_value) or default_value)
+    except Exception:
+        return float(default_value or 0)
+
+
+def normalize_attendance_state(value):
+    text = (value or '').strip()
+    replacements = {
+        'AsistiÃ³': 'Asistió',
+        'FaltÃ³': 'Faltó',
+    }
+    text = replacements.get(text, text)
+    text_upper = text.upper()
+    if text_upper.startswith('ASIST'):
+        return 'Asistió'
+    if text_upper.startswith('FALT'):
+        return 'Faltó'
+    if text_upper.startswith('TARD'):
+        return 'Tardanza'
+    if text_upper.startswith('PERMI'):
+        return 'Permiso'
+    return text
+
+
+def get_latest_attendance_rows_for_period(conn, periodo):
+    return conn.execute(
+        """
+        WITH asistencia_ultima AS (
+            SELECT a.*
+            FROM asistencia a
+            JOIN (
+                SELECT socio_numero, fecha, MAX(id) AS max_id
+                FROM asistencia
+                WHERE fecha IS NOT NULL
+                  AND substr(fecha, 1, 7)=?
+                GROUP BY socio_numero, fecha
+            ) ult
+              ON ult.max_id = a.id
+        )
+        SELECT *
+        FROM asistencia_ultima
+        ORDER BY fecha DESC, socio_numero ASC
+        """,
+        (periodo,),
+    ).fetchall()
+
+
+def sync_attendance_fines_for_period(conn, periodo):
+    multa_inasistencia = round(get_float_config_value(conn, 'multa_inasistencia', 10), 1)
+    multa_tardanza = round(get_float_config_value(conn, 'multa_tardanza', 5), 1)
+    period_row = get_period_row(conn, periodo)
+    if is_period_closed(period_row):
+        return {
+            'multa_inasistencia': multa_inasistencia,
+            'multa_tardanza': multa_tardanza,
+            'locked': True,
+        }
+    socios_rows = conn.execute("SELECT numero, nombre FROM socios ORDER BY numero").fetchall()
+    latest_rows = get_latest_attendance_rows_for_period(conn, periodo)
+    counters = {
+        row['numero']: {
+            'socio_nombre': row['nombre'],
+            'inasistencias': 0,
+            'tardanzas': 0,
+        }
+        for row in socios_rows
+    }
+    for row in latest_rows:
+        socio_numero = row['socio_numero']
+        if socio_numero not in counters:
+            continue
+        state = normalize_attendance_state(row['estado'])
+        if state == 'Faltó':
+            counters[socio_numero]['inasistencias'] += 1
+        elif state == 'Tardanza':
+            counters[socio_numero]['tardanzas'] += 1
+
+    for socio_numero, row in counters.items():
+        inasistencias = int(row['inasistencias'] or 0)
+        tardanzas = int(row['tardanzas'] or 0)
+        total_multa = round((inasistencias * multa_inasistencia) + (tardanzas * multa_tardanza), 1)
+        existente = conn.execute(
+            """
+            SELECT id, estado_cobro, fecha_cobro, observacion, edicion_manual, oculto_manual
+            FROM multas_asistencia
+            WHERE periodo=? AND socio_numero=?
+            """,
+            (periodo, socio_numero),
+        ).fetchone()
+        if existente and int(existente['oculto_manual'] or 0) == 1:
+            continue
+        if existente and int(existente['edicion_manual'] or 0) == 1:
+            conn.execute(
+                """
+                UPDATE multas_asistencia
+                SET socio_nombre=?,
+                    calculado_en=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (row['socio_nombre'], existente['id']),
+            )
+            continue
+        if total_multa <= 0:
+            if existente:
+                conn.execute("DELETE FROM multas_asistencia WHERE id=?", (existente['id'],))
+            continue
+        if existente:
+            conn.execute(
+                """
+                UPDATE multas_asistencia
+                SET socio_nombre=?,
+                    inasistencias=?,
+                    tardanzas=?,
+                    monto_multa_inasistencia=?,
+                    monto_multa_tardanza=?,
+                    total_multa=?,
+                    edicion_manual=0,
+                    oculto_manual=0,
+                    calculado_en=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (
+                    row['socio_nombre'],
+                    inasistencias,
+                    tardanzas,
+                    multa_inasistencia,
+                    multa_tardanza,
+                    total_multa,
+                    existente['id'],
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO multas_asistencia(
+                    periodo, socio_numero, socio_nombre, inasistencias, tardanzas,
+                    monto_multa_inasistencia, monto_multa_tardanza, total_multa,
+                    estado_cobro, fecha_cobro, observacion, edicion_manual, oculto_manual
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    periodo,
+                    socio_numero,
+                    row['socio_nombre'],
+                    inasistencias,
+                    tardanzas,
+                    multa_inasistencia,
+                    multa_tardanza,
+                    total_multa,
+                    'Pendiente',
+                    None,
+                    None,
+                    0,
+                    0,
+                ),
+            )
+    conn.commit()
+    return {
+        'multa_inasistencia': multa_inasistencia,
+        'multa_tardanza': multa_tardanza,
+        'locked': False,
+    }
+
+
 def get_latest_financial_period(conn):
     row = conn.execute(
         """
@@ -935,6 +1563,14 @@ def sync_dashboard_financial_snapshot(conn, periodo):
         "INSERT OR REPLACE INTO configuracion(clave, valor) VALUES(?, ?)",
         ('resumen_financiero_periodo_oficial', snapshot['periodo']),
     )
+    log_financial_event(
+        'Snapshot financiero sincronizado',
+        periodo=periodo,
+        saldo_actual_total=snapshot['saldo_actual_total'],
+        total_socios=snapshot['total_socios'],
+        acciones_por_socio=snapshot['acciones_por_socio'],
+        fuente=snapshot['fuente'],
+    )
     return snapshot
 
 
@@ -956,6 +1592,7 @@ def annotate_schedule_rows(rows, closed_period):
     for row in rows or []:
         item = dict(row)
         item['periodo_cuota'] = (item.get('fecha') or '')[:7]
+        # Se resalta todo lo que ya quedó cubierto por el último cierre mensual.
         item['periodo_cerrado'] = bool(closed_period and item['periodo_cuota'] and item['periodo_cuota'] <= closed_period)
         annotated.append(item)
     return annotated
@@ -1203,6 +1840,21 @@ def create_loan_history_record(conn, socio_numero, socio_nombre, prestamo, accio
                 row['hoja_origen'],
             ),
         )
+    log_financial_event(
+        'Historial de préstamo registrado',
+        historial_id=historial_id,
+        socio_numero=socio_numero,
+        socio_nombre=socio_nombre,
+        accion=accion,
+        estado_resultante=estado_resultante,
+        detalle=detalle,
+        creado_por=creado_por,
+        prestamo_id=prestamo['id'] if prestamo else None,
+        periodo=prestamo['periodo'] if prestamo else None,
+        monto=prestamo['monto'] if prestamo else None,
+        cuotas=prestamo['cuotas'] if prestamo else None,
+        saldo_anterior=socio_anterior['saldo'] if socio_anterior else None,
+    )
     return historial_id
 
 
@@ -1252,6 +1904,20 @@ def create_reserved_loan(conn, periodo, socio, monto, cuotas, tasa_mensual, fech
                 row['saldo'],
             ),
         )
+    log_financial_event(
+        'Préstamo reservado',
+        prestamo_id=prestamo_id,
+        periodo=periodo,
+        socio_numero=socio['numero'],
+        socio_nombre=socio['nombre'],
+        monto=round(monto, 1),
+        cuotas=cuotas,
+        tasa_mensual=tasa_mensual,
+        fecha_desembolso=fecha_desembolso,
+        cuota_inicial=cuota_inicial,
+        total_interes=total_interes,
+        total_pagable=total_pagable,
+    )
     return prestamo_id
 
 
@@ -1311,6 +1977,8 @@ def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get('user_id'):
+            if is_api_request():
+                return api_error('Debes iniciar sesión para usar esta API.', status=401)
             return redirect(url_for('main.login'))
         return view(*args, **kwargs)
     return wrapped
@@ -1335,9 +2003,11 @@ def inject_config():
             cfg = {r['clave']: r['valor'] for r in conn.execute("SELECT clave, valor FROM configuracion").fetchall()}
             excel = conn.execute("SELECT valor FROM meta WHERE clave='excel_importado'").fetchone()
             excel_sync = conn.execute("SELECT valor FROM meta WHERE clave='excel_sync_at'").fetchone()
+        logo_config = (cfg.get('logo_institucional') or '').strip()
         return dict(
             app_nombre=cfg.get('nombre_asociacion', 'Asociación JAWILVIO'),
             app_ubicacion=cfg.get('ubicacion', 'Celendín, Cajamarca'),
+            app_logo=build_branding_logo_url(logo_config),
             excel_importado=excel['valor'] if excel else '',
             excel_sync_at=excel_sync['valor'] if excel_sync else '',
             can_access=lambda endpoint, write=False: role_can_access_endpoint(session.get('role'), endpoint, write),
@@ -1347,6 +2017,7 @@ def inject_config():
         return dict(
             app_nombre='Asociación JAWILVIO',
             app_ubicacion='Celendín, Cajamarca',
+            app_logo=url_for('static', filename='img/logo_jawilvio_light.svg'),
             excel_importado='',
             excel_sync_at='',
             can_access=lambda endpoint, write=False: False,
@@ -1362,31 +2033,104 @@ def index():
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
+    pending_two_factor = bool(session.get('pending_2fa_user_id'))
     if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '').strip()
-        with connect_db() as conn:
-            user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-        if user:
-            if user['estado'] == 'Suspendido':
-                error = 'Tu usuario está suspendido. Contacta al administrador.'
-                return render_template('login.html', error=error)
-            if user['password'] != password:
-                error = 'Credenciales incorrectas'
-                return render_template('login.html', error=error)
+        action = request.form.get('action', 'password_step').strip()
+        if action == 'verify_2fa':
+            pending_user_id = session.get('pending_2fa_user_id')
+            code = request.form.get('two_factor_code', '').strip()
+            if not pending_user_id:
+                clear_pending_two_factor_session()
+                error = 'Tu verificación en dos pasos venció. Ingresa nuevamente con tu usuario y contraseña.'
+            else:
+                with connect_db() as conn:
+                    user = conn.execute("SELECT * FROM users WHERE id=?", (pending_user_id,)).fetchone()
+                    if not user:
+                        clear_pending_two_factor_session()
+                        error = 'No se encontró el usuario para completar la verificación.'
+                    elif not user['two_factor_enabled'] or not (user['two_factor_secret'] or '').strip():
+                        clear_pending_two_factor_session()
+                        error = 'La verificación en dos pasos ya no está activa para este usuario.'
+                    elif not verify_totp_code(user['two_factor_secret'], code):
+                        error = 'El código de verificación no es válido.'
+                        log_system_event(
+                            'Código 2FA inválido',
+                            level=logging.WARNING,
+                            username_intent=user['username'],
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE users SET ultimo_acceso=CURRENT_TIMESTAMP WHERE id=?",
+                            (user['id'],),
+                        )
+                        conn.commit()
+                        finalize_login_session(user)
+                        log_action(user['username'], 'Inicio de sesión con 2FA', f"Rol: {user['role']}")
+                        return redirect(url_for('main.dashboard'))
+        else:
+            username = request.form.get('username', '').strip()
+            password = request.form.get('password', '').strip()
             with connect_db() as conn:
-                conn.execute(
-                    "UPDATE users SET ultimo_acceso=CURRENT_TIMESTAMP WHERE id=?",
-                    (user['id'],),
+                user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+            if user:
+                if user['estado'] == 'Suspendido':
+                    error = 'Tu usuario está suspendido. Contacta al administrador.'
+                    log_system_event(
+                        'Intento de inicio de sesión con usuario suspendido',
+                        level=logging.WARNING,
+                        username_intent=username,
+                        role=user['role'],
+                    )
+                elif not verify_password(user['password'], password):
+                    error = 'Credenciales incorrectas'
+                    log_system_event(
+                        'Inicio de sesión fallido por contraseña incorrecta',
+                        level=logging.WARNING,
+                        username_intent=username,
+                    )
+                elif user['two_factor_enabled'] and (user['two_factor_secret'] or '').strip():
+                    if not is_password_hashed(user['password']):
+                        with connect_db() as conn:
+                            conn.execute(
+                                "UPDATE users SET password=? WHERE id=?",
+                                (hash_password(password), user['id']),
+                            )
+                            conn.commit()
+                    clear_pending_two_factor_session()
+                    session['pending_2fa_user_id'] = user['id']
+                    session['pending_2fa_username'] = user['username']
+                    session['pending_2fa_role'] = user['role']
+                    session['pending_2fa_started_at'] = datetime.now().isoformat()
+                    pending_two_factor = True
+                else:
+                    with connect_db() as conn:
+                        if not is_password_hashed(user['password']):
+                            conn.execute(
+                                "UPDATE users SET password=? WHERE id=?",
+                                (hash_password(password), user['id']),
+                            )
+                        conn.execute(
+                            "UPDATE users SET ultimo_acceso=CURRENT_TIMESTAMP WHERE id=?",
+                            (user['id'],),
+                        )
+                        conn.commit()
+                    finalize_login_session(user)
+                    log_action(user['username'], 'Inicio de sesión', f"Rol: {user['role']}")
+                    return redirect(url_for('main.dashboard'))
+            else:
+                error = 'Credenciales incorrectas'
+                log_system_event(
+                    'Inicio de sesión fallido por usuario inexistente',
+                    level=logging.WARNING,
+                    username_intent=username,
                 )
-                conn.commit()
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            session['role'] = user['role']
-            log_action(user['username'], 'Inicio de sesión', f"Rol: {user['role']}")
-            return redirect(url_for('main.dashboard'))
-        error = 'Credenciales incorrectas'
-    return render_template('login.html', error=error)
+
+    return render_template(
+        'login.html',
+        error=error,
+        pending_two_factor=pending_two_factor,
+        pending_username=session.get('pending_2fa_username', ''),
+    )
 
 
 @bp.route('/logout')
@@ -1398,546 +2142,6 @@ def logout():
     except Exception:
         pass
     return redirect(url_for('main.login'))
-
-
-@bp.route('/api/socio/<int:socio_numero>', methods=['GET'])
-def api_socio(socio_numero):
-    with connect_db() as conn:
-        socio = conn.execute(
-            """
-            SELECT numero, nombre
-            FROM socios
-            WHERE numero = ?
-            """,
-            (socio_numero,)
-        ).fetchone()
-
-        if socio is None:
-            return jsonify({"error": "Socio no encontrado"}), 404
-
-        periodo_actual = get_default_period(conn)
-        ensure_monthly_collections(conn, periodo_actual)
-
-        saldo = conn.execute(
-            """
-            SELECT saldo_actual
-            FROM obligaciones_mensuales
-            WHERE socio_numero = ? AND periodo = ?
-            LIMIT 1
-            """,
-            (socio_numero, periodo_actual)
-        ).fetchone()
-
-    respuesta = {
-    "id": socio["numero"],
-    "nombre": socio["nombre"],
-    "aporte_total": float(saldo["saldo_actual"]) if saldo else 0.0
-    }
-
-    return Response(
-        json.dumps(respuesta, indent=4, ensure_ascii=False),
-        mimetype="application/json"
-    )
-
-@bp.route('/api/socios', methods=['GET'])
-def api_socios():
-    with connect_db() as conn:
-        periodo_actual = get_default_period(conn)
-        ensure_monthly_collections(conn, periodo_actual)
-
-        socios = conn.execute(
-            """
-            SELECT s.numero, s.nombre, COALESCE(o.saldo_actual, 0) AS aporte_total
-            FROM socios s
-            LEFT JOIN obligaciones_mensuales o
-                ON o.socio_numero = s.numero AND o.periodo = ?
-            ORDER BY s.numero ASC
-            """,
-            (periodo_actual,)
-        ).fetchall()
-
-    resultado = []
-    for socio in socios:
-        resultado.append({
-            "id": socio["numero"],
-            "nombre": socio["nombre"],
-            "aporte_total": float(socio["aporte_total"] or 0)
-        })
-
-    return jsonify({
-        "ok": True,
-        "periodo": periodo_actual,
-        "total": len(resultado),
-        "socios": resultado
-    })
-
-@bp.route('/api/dashboard', methods=['GET'])
-def api_dashboard():
-    with connect_db() as conn:
-        periodo_actual = get_default_period(conn)
-        ensure_monthly_collections(conn, periodo_actual)
-        cleanup_legacy_auto_reunion_assignment(conn, periodo_actual)
-
-        total_socios = conn.execute("SELECT COUNT(*) FROM socios").fetchone()[0]
-
-        prestamos_activos = conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM obligaciones_mensuales
-            WHERE periodo=? AND COALESCE(saldo_actual, 0) > 0
-            """,
-            (periodo_actual,),
-        ).fetchone()[0]
-
-        saldo_total = conn.execute(
-            """
-            SELECT COALESCE(SUM(saldo_actual), 0)
-            FROM obligaciones_mensuales
-            WHERE periodo=?
-            """,
-            (periodo_actual,),
-        ).fetchone()[0] or 0
-
-        reuniones = conn.execute(
-            "SELECT COUNT(*) FROM reuniones_mensuales WHERE periodo=?",
-            (periodo_actual,),
-        ).fetchone()[0]
-
-        permisos = conn.execute(
-            "SELECT COUNT(*) FROM permisos_mensuales WHERE periodo=?",
-            (periodo_actual,),
-        ).fetchone()[0]
-
-        capital_recuperado = conn.execute(
-            "SELECT COALESCE(SUM(abono_capital),0) FROM cuotas WHERE plazo > 0"
-        ).fetchone()[0] or 0
-
-        intereses = conn.execute(
-            "SELECT COALESCE(SUM(interes),0) FROM cuotas WHERE plazo > 0"
-        ).fetchone()[0] or 0
-
-        cuotas_total = conn.execute(
-            "SELECT COALESCE(SUM(cuota),0) FROM cuotas WHERE plazo > 0"
-        ).fetchone()[0] or 0
-
-        cuota_promedio = conn.execute(
-            "SELECT COALESCE(AVG(cuota),0) FROM cuotas WHERE cuota > 0"
-        ).fetchone()[0] or 0
-
-    return jsonify({
-        "ok": True,
-        "periodo_actual": periodo_actual,
-        "totales": {
-            "total_socios": total_socios,
-            "prestamos_activos": prestamos_activos,
-            "saldo_total": float(saldo_total),
-            "reuniones": reuniones,
-            "permisos": permisos,
-            "capital_recuperado": float(capital_recuperado),
-            "intereses": float(intereses),
-            "cuotas_total": float(cuotas_total),
-            "cuota_promedio": float(cuota_promedio)
-        }
-    })
-    
-@bp.route('/dashboard')
-@login_required
-def dashboard():
-    with connect_db() as conn:
-        periodo_actual = get_default_period(conn)
-        ensure_monthly_collections(conn, periodo_actual)
-        cleanup_legacy_auto_reunion_assignment(conn, periodo_actual)
-        total_socios = conn.execute("SELECT COUNT(*) FROM socios").fetchone()[0]
-        prestamos_activos = conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM obligaciones_mensuales
-            WHERE periodo=? AND COALESCE(saldo_actual, 0) > 0
-            """,
-            (periodo_actual,),
-        ).fetchone()[0]
-        saldo_total = conn.execute(
-            """
-            SELECT COALESCE(SUM(saldo_actual), 0)
-            FROM obligaciones_mensuales
-            WHERE periodo=?
-            """,
-            (periodo_actual,),
-        ).fetchone()[0]
-        alertas = 0
-        socios = conn.execute("""
-            SELECT s.*,
-                   COALESCE(om.saldo_actual, s.saldo, 0) as saldo_periodo,
-                   COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real
-            FROM socios s
-            LEFT JOIN cuotas c ON c.socio_numero = s.numero
-            LEFT JOIN obligaciones_mensuales om ON om.periodo=? AND om.socio_numero=s.numero
-            GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos
-            ORDER BY s.numero
-            LIMIT 8
-        """, (periodo_actual,)).fetchall()
-        reuniones = conn.execute(
-            "SELECT COUNT(*) FROM reuniones_mensuales WHERE periodo=?",
-            (periodo_actual,),
-        ).fetchone()[0]
-        permisos = conn.execute(
-            "SELECT COUNT(*) FROM permisos_mensuales WHERE periodo=?",
-            (periodo_actual,),
-        ).fetchone()[0]
-        capital_recuperado = conn.execute("SELECT COALESCE(SUM(abono_capital),0) FROM cuotas WHERE plazo > 0").fetchone()[0]
-        intereses = conn.execute("SELECT COALESCE(SUM(interes),0) FROM cuotas WHERE plazo > 0").fetchone()[0]
-        cuotas_total = conn.execute("SELECT COALESCE(SUM(cuota),0) FROM cuotas WHERE plazo > 0").fetchone()[0]
-        cuota_promedio = conn.execute("SELECT COALESCE(AVG(cuota),0) FROM cuotas WHERE cuota > 0").fetchone()[0]
-        periodo_financiero_panel = get_latest_financial_period(conn) or periodo_actual
-        snapshot_financiero = get_financial_snapshot_for_period(conn, periodo_financiero_panel)
-        if snapshot_financiero:
-            saldo_actual_total_oficial = float(snapshot_financiero['saldo_actual_total'] or 0)
-            acciones_por_socio_oficial = float(snapshot_financiero['acciones_por_socio'] or 0)
-        else:
-            try:
-                saldo_actual_total_oficial = float(get_config_value(conn, 'saldo_actual_total_oficial', saldo_total or 0) or 0)
-            except Exception:
-                saldo_actual_total_oficial = float(saldo_total or 0)
-            try:
-                acciones_por_socio_oficial = float(get_config_value(conn, 'acciones_por_socio_oficial', 0) or 0)
-            except Exception:
-                acciones_por_socio_oficial = 0
-        try:
-            total_prestamo_acumulado = float(get_config_value(conn, 'total_prestamo_acumulado_oficial', cuotas_total or 0) or 0)
-        except Exception:
-            total_prestamo_acumulado = float(cuotas_total or 0)
-        morosos = 0
-        top_morosos = []
-        resumen_mensual = conn.execute("""
-            SELECT substr(fecha,1,7) as periodo,
-                   ROUND(SUM(interes),2) as intereses,
-                   ROUND(SUM(abono_capital),2) as capital,
-                   ROUND(SUM(cuota),2) as cuotas
-            FROM cuotas
-            WHERE fecha IS NOT NULL
-            GROUP BY substr(fecha,1,7)
-            ORDER BY periodo DESC
-            LIMIT 6
-        """).fetchall()
-        import_status = conn.execute("SELECT valor FROM meta WHERE clave='import_status'").fetchone()
-        periodo_vigente = conn.execute(
-            """
-            SELECT *
-            FROM periodos
-            WHERE periodo=?
-            """,
-            (periodo_actual,),
-        ).fetchone()
-        colocacion_vigente = get_period_placement_status(
-            conn,
-            periodo_actual,
-            periodo_vigente['total_recaudado'] if periodo_vigente else 0,
-        )
-        detalle_periodo = conn.execute(
-            """
-            SELECT socio_numero, socio_nombre, cuota_prestamo, aporte_mensual, total_mes, saldo_actual
-            FROM obligaciones_mensuales
-            WHERE periodo=?
-            ORDER BY total_mes DESC, socio_numero ASC
-            LIMIT 8
-            """,
-            (periodo_actual,),
-        ).fetchall()
-        historial_periodos = conn.execute(
-            """
-            SELECT periodo, estado, total_recaudado, total_colocado, saldo_por_colocar
-            FROM periodos
-            ORDER BY periodo DESC
-            LIMIT 6
-            """
-        ).fetchall()
-        prestamos_periodo = conn.execute(
-            """
-            SELECT COUNT(*) as total,
-                   COALESCE(SUM(CASE WHEN estado='Reservado' THEN 1 ELSE 0 END), 0) as reservados,
-                   COALESCE(SUM(CASE WHEN estado='Aprobado' THEN 1 ELSE 0 END), 0) as aprobados
-            FROM prestamos_nuevos
-            WHERE periodo=?
-            """,
-            (periodo_actual,),
-        ).fetchone()
-        periodo_anterior = conn.execute(
-            """
-            SELECT periodo, estado, total_recaudado, total_colocado, saldo_por_colocar
-            FROM periodos
-            WHERE periodo < ?
-            ORDER BY periodo DESC
-            LIMIT 1
-            """,
-            (periodo_actual,),
-        ).fetchone()
-        top_saldos = conn.execute(
-            """
-            SELECT s.numero,
-                   s.nombre,
-                   COALESCE(om.saldo_actual, s.saldo, 0) as saldo_actual,
-                   COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real
-            FROM socios s
-            LEFT JOIN cuotas c ON c.socio_numero = s.numero
-            LEFT JOIN obligaciones_mensuales om ON om.periodo=? AND om.socio_numero=s.numero
-            GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos
-            ORDER BY COALESCE(om.saldo_actual, s.saldo, 0) DESC, s.numero ASC
-            LIMIT 5
-            """
-            ,
-            (periodo_actual,),
-        ).fetchall()
-        resumen_prestamos_multiples = conn.execute(
-            """
-            SELECT COUNT(*) as socios_multiples
-            FROM (
-                SELECT socio_numero
-                FROM prestamos_excel_historial
-                WHERE COALESCE(oculto_manual, 0)=0
-                GROUP BY socio_numero
-                HAVING COUNT(*) > 1
-            ) x
-            """
-        ).fetchone()
-
-    fondo_total = saldo_total or 0
-    saldo_actual_total_panel = saldo_actual_total_oficial or fondo_total
-    max_referencia = max(fondo_total, capital_recuperado or 0, intereses or 0, cuotas_total or 0, 1)
-    barras = {
-        'saldo_total': round((fondo_total / max_referencia) * 100, 2),
-        'capital_recuperado': round(((capital_recuperado or 0) / max_referencia) * 100, 2),
-        'intereses': round(((intereses or 0) / max_referencia) * 100, 2),
-        'cuotas_total': round(((cuotas_total or 0) / max_referencia) * 100, 2),
-    }
-    periodo_actual_resumen = {
-        'periodo': periodo_actual,
-        'estado': periodo_vigente['estado'] if periodo_vigente else 'Abierto',
-        'socios': periodo_vigente['total_socios'] if periodo_vigente else 0,
-        'total_prestamos': periodo_vigente['total_prestamos'] if periodo_vigente else 0,
-        'total_aportes': periodo_vigente['total_aportes'] if periodo_vigente else 0,
-        'total_recaudado': periodo_vigente['total_recaudado'] if periodo_vigente else 0,
-        'total_colocado': colocacion_vigente['total_colocado'] if colocacion_vigente else 0,
-        'saldo_por_colocar': colocacion_vigente['saldo_por_colocar'] if colocacion_vigente else 0,
-        'colocacion_completa': (colocacion_vigente['saldo_por_colocar'] if colocacion_vigente else 0) <= 0.0001,
-        'porcentaje_colocado': round(
-            (((colocacion_vigente['total_colocado'] if colocacion_vigente else 0) / ((periodo_vigente['total_recaudado'] if periodo_vigente else 0) or 1)) * 100),
-            1,
-        ) if (periodo_vigente and (periodo_vigente['total_recaudado'] or 0) > 0) else 0,
-        'promedio_por_socio': round(
-            ((periodo_vigente['total_recaudado'] if periodo_vigente else 0) / ((periodo_vigente['total_socios'] if periodo_vigente else 0) or 1)),
-            1,
-        ) if (periodo_vigente and (periodo_vigente['total_socios'] or 0) > 0) else 0,
-    }
-    mayor_total_mes = detalle_periodo[0] if detalle_periodo else None
-    mayor_saldo = top_saldos[0] if top_saldos else None
-    colocacion_counts = colocacion_vigente['origin_counts'] if colocacion_vigente else {'excel': 0, 'app_aprobado': 0, 'app_reservado': 0}
-    acciones_por_socio = acciones_por_socio_oficial or (round((saldo_actual_total_panel / total_socios), 1) if total_socios else 0)
-    cartera_vigente_pct = round(((fondo_total or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
-    capital_recuperado_pct = round(((capital_recuperado or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
-    intereses_pct = round(((intereses or 0) / (total_prestamo_acumulado or 1)) * 100, 1) if (total_prestamo_acumulado or 0) > 0 else 0
-    brecha_colocacion_pct = round((((periodo_actual_resumen['saldo_por_colocar'] or 0) / ((periodo_actual_resumen['total_recaudado'] or 0) or 1)) * 100), 1) if (periodo_actual_resumen['total_recaudado'] or 0) > 0 else 0
-    panel_financiero = {
-        'saldo_actual_total': saldo_actual_total_panel,
-        'total_prestamo_acumulado': total_prestamo_acumulado,
-        'capital_recuperado': capital_recuperado,
-        'intereses_proyectados': intereses,
-        'fondo_mes': periodo_actual_resumen['total_recaudado'],
-        'ya_colocado': periodo_actual_resumen['total_colocado'],
-        'por_colocar': periodo_actual_resumen['saldo_por_colocar'],
-        'acciones_por_socio': acciones_por_socio,
-        'promedio_periodo': periodo_actual_resumen['promedio_por_socio'],
-        'cartera_vigente_pct': cartera_vigente_pct,
-        'capital_recuperado_pct': capital_recuperado_pct,
-        'intereses_pct': intereses_pct,
-        'colocacion_pct': periodo_actual_resumen['porcentaje_colocado'],
-        'brecha_colocacion_pct': brecha_colocacion_pct,
-    }
-
-    return render_template(
-        'dashboard_reporte.html',
-        total_socios=total_socios,
-        prestamos_activos=prestamos_activos,
-        saldo_total=saldo_total,
-        alertas=alertas,
-        socios=socios,
-        reuniones=reuniones,
-        permisos=permisos,
-        capital_recuperado=capital_recuperado,
-        intereses=intereses,
-        cuotas_total=cuotas_total,
-        total_prestamo_acumulado=total_prestamo_acumulado,
-        cuota_promedio=cuota_promedio,
-        morosos=morosos,
-        top_morosos=top_morosos,
-        resumen_mensual=resumen_mensual,
-        import_status=import_status['valor'] if import_status else 'Sin importación',
-        fondo_total=fondo_total,
-        saldo_actual_total_panel=saldo_actual_total_panel,
-        barras=barras,
-        periodo_actual_resumen=periodo_actual_resumen,
-        detalle_periodo=detalle_periodo,
-        historial_periodos=historial_periodos,
-        prestamos_periodo=prestamos_periodo,
-        periodo_anterior=periodo_anterior,
-        colocacion_detalle_rows=colocacion_vigente['detalle_rows'] if colocacion_vigente else [],
-        colocacion_counts=colocacion_counts,
-        top_saldos=top_saldos,
-        resumen_prestamos_multiples=resumen_prestamos_multiples,
-        mayor_total_mes=mayor_total_mes,
-        mayor_saldo=mayor_saldo,
-        acciones_por_socio=acciones_por_socio,
-        panel_financiero=panel_financiero,
-        periodo_financiero_panel=periodo_financiero_panel,
-    )
-
-
-@bp.route('/socios', methods=['GET', 'POST'])
-@login_required
-def socios():
-    q = request.args.get('q', '').strip()
-    with connect_db() as conn:
-        periodo_actual = get_default_period(conn)
-        ensure_monthly_collections(conn, periodo_actual)
-        if request.method == 'POST':
-            if session.get('role') != 'Administrador':
-                flash('Solo el administrador puede realizar esta acción.')
-                return redirect(url_for('main.socios', q=q))
-            action = request.form.get('action', '').strip()
-            if action in {'create', 'update'}:
-                numero = request.form.get('numero', '').strip()
-                nombre = request.form.get('nombre', '').strip()
-                dni = request.form.get('dni', '').strip()
-                meses = request.form.get('meses', '').strip()
-                fecha_prestamo = request.form.get('fecha_prestamo', '').strip()
-                saldo = request.form.get('saldo', '').strip()
-                mes_2026 = request.form.get('mes_2026', '').strip()
-                numero_int = int(numero) if numero.isdigit() else None
-                meses_int = int(meses) if meses.isdigit() else None
-                try:
-                    saldo_float = float(saldo) if saldo not in ('', None) else 0.0
-                except Exception:
-                    saldo_float = None
-                if numero_int is None or not nombre:
-                    flash('Completa al menos número y nombre del socio.')
-                    return redirect(url_for('main.socios', q=q))
-                if saldo_float is None:
-                    flash('Ingresa un saldo válido.')
-                    return redirect(url_for('main.socios', q=q))
-                exists = conn.execute("SELECT id FROM socios WHERE numero=?", (numero_int,)).fetchone()
-                if action == 'create' and exists:
-                    flash('Ya existe un socio con ese número.')
-                    return redirect(url_for('main.socios', q=q))
-                foto_actual = conn.execute("SELECT foto FROM socios WHERE numero=?", (numero_int,)).fetchone()
-                foto_guardada = foto_actual['foto'] if foto_actual else None
-                nueva_foto = save_socio_photo(request.files.get('foto_archivo'), numero_int)
-                if nueva_foto is False:
-                    flash('La foto debe ser JPG, JPEG, PNG o WEBP.')
-                    return redirect(url_for('main.socios', q=q, edit=numero_int if action == 'update' else None))
-                if nueva_foto:
-                    delete_socio_photo_if_local(foto_guardada)
-                    foto_guardada = nueva_foto
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO socios(
-                        id, numero, nombre, dni, foto, meses, plazo_balance, fecha_prestamo, saldo, mes_2026, reunion, permisos
-                    )
-                    VALUES(
-                        COALESCE((SELECT id FROM socios WHERE numero=?), NULL), ?, ?, ?, ?, ?, 
-                        COALESCE((SELECT plazo_balance FROM socios WHERE numero=?), NULL),
-                        ?, ?, ?, 
-                        COALESCE((SELECT reunion FROM socios WHERE numero=?), NULL),
-                        COALESCE((SELECT permisos FROM socios WHERE numero=?), NULL)
-                    )
-                    """,
-                    (
-                        numero_int,
-                        numero_int,
-                        nombre,
-                        dni or None,
-                        foto_guardada,
-                        meses_int,
-                        numero_int,
-                        fecha_prestamo or None,
-                        saldo_float,
-                        mes_2026 or None,
-                        numero_int,
-                        numero_int,
-                    ),
-                )
-                conn.commit()
-                log_action(session.get('username', 'admin'), 'Gestión de socios', f'Socio {"actualizado" if action == "update" else "creado"}: {numero_int} - {nombre}')
-                flash(f'Socio {"actualizado" if action == "update" else "creado"} correctamente.')
-                return redirect(url_for('main.socios', q=q))
-            if action == 'delete':
-                numero = request.form.get('numero', '').strip()
-                numero_int = int(numero) if numero.isdigit() else None
-                socio = conn.execute("SELECT nombre FROM socios WHERE numero=?", (numero_int,)).fetchone() if numero_int is not None else None
-                if not socio:
-                    flash('No se encontró el socio solicitado.')
-                    return redirect(url_for('main.socios', q=q))
-                historial_ids = [row['id'] for row in conn.execute("SELECT id FROM historial_prestamos_socios WHERE socio_numero=?", (numero_int,)).fetchall()]
-                prestamo_excel_ids = [row['id'] for row in conn.execute("SELECT id FROM prestamos_excel_historial WHERE socio_numero=?", (numero_int,)).fetchall()]
-                delete_socio_photo_if_local(conn.execute("SELECT foto FROM socios WHERE numero=?", (numero_int,)).fetchone()['foto'])
-                for historial_id in historial_ids:
-                    conn.execute("DELETE FROM historial_prestamos_socios_cuotas WHERE historial_id=?", (historial_id,))
-                for prestamo_excel_id in prestamo_excel_ids:
-                    conn.execute("DELETE FROM prestamos_excel_historial_cuotas WHERE prestamo_excel_id=?", (prestamo_excel_id,))
-                conn.execute("DELETE FROM cuotas WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM asistencia WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM saldo_historico_mensual WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM obligaciones_mensuales WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM aportaciones_mensuales WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM obligaciones_mensuales_override WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM prioridad_colocacion_manual WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM prestamos_nuevos WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM historial_prestamos_socios WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM prestamos_excel_historial WHERE socio_numero=?", (numero_int,))
-                conn.execute("DELETE FROM socios WHERE numero=?", (numero_int,))
-                conn.commit()
-                log_action(session.get('username', 'admin'), 'Gestión de socios', f'Socio eliminado: {numero_int} - {socio["nombre"]}')
-                flash('Socio eliminado correctamente.')
-                return redirect(url_for('main.socios', q=q))
-        if q:
-            data = conn.execute(
-                """
-                SELECT s.*,
-                       COALESCE(om.saldo_actual, s.saldo, 0) as saldo_periodo,
-                       COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real
-                FROM socios s
-                LEFT JOIN cuotas c ON c.socio_numero = s.numero
-                LEFT JOIN obligaciones_mensuales om ON om.periodo=? AND om.socio_numero=s.numero
-                WHERE s.nombre LIKE ? OR CAST(s.numero AS TEXT) LIKE ? OR COALESCE(s.dni, '') LIKE ?
-                GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos
-                ORDER BY s.numero
-                """,
-                (periodo_actual, f'%{q}%', f'%{q}%', f'%{q}%'),
-            ).fetchall()
-        else:
-            data = conn.execute("""
-                SELECT s.*,
-                       COALESCE(om.saldo_actual, s.saldo, 0) as saldo_periodo,
-                       COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real
-                FROM socios s
-                LEFT JOIN cuotas c ON c.socio_numero = s.numero
-                LEFT JOIN obligaciones_mensuales om ON om.periodo=? AND om.socio_numero=s.numero
-                GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos
-                ORDER BY s.numero
-            """, (periodo_actual,)).fetchall()
-        edit_numero = request.args.get('edit', '').strip()
-        edit_numero_int = int(edit_numero) if edit_numero.isdigit() else None
-        edit_socio = conn.execute(
-            "SELECT * FROM socios WHERE numero=?",
-            (edit_numero_int,),
-        ).fetchone() if edit_numero_int is not None else None
-    socios_render = []
-    for row in data:
-        row_dict = dict(row)
-        row_dict['foto_url'] = build_socio_photo_url(row_dict.get('foto'))
-        socios_render.append(row_dict)
-    edit_socio_dict = dict(edit_socio) if edit_socio else None
-    if edit_socio_dict:
-        edit_socio_dict['foto_url'] = build_socio_photo_url(edit_socio_dict.get('foto'))
-    return render_template('socios_gestion.html', socios=socios_render, q=q, edit_socio=edit_socio_dict)
 
 
 @bp.route('/socio/<int:numero>', methods=['GET', 'POST'])
@@ -2004,31 +2208,15 @@ def socio_detalle(numero):
                 )
                 flash('Préstamo histórico manual creado correctamente.')
                 return redirect(url_for('main.socio_detalle', numero=numero))
-            if action == 'aplicar_prestamo_excel':
+            if action in {'aplicar_prestamo_excel', 'actualizar_prestamo_excel'}:
                 prestamo_excel_id = request.form.get('prestamo_excel_id', type=int)
-                titulo_visible = request.form.get('titulo_visible', '').strip()
-                saldo_base_ref_raw = request.form.get('saldo_base_ref', '').strip()
-                prestamo_adicional_ref_raw = request.form.get('prestamo_adicional_ref', '').strip()
-                try:
-                    saldo_base_ref = round(float(saldo_base_ref_raw), 1) if saldo_base_ref_raw else None
-                except Exception:
-                    saldo_base_ref = None
-                try:
-                    prestamo_adicional_ref = round(float(prestamo_adicional_ref_raw), 1) if prestamo_adicional_ref_raw else None
-                except Exception:
-                    prestamo_adicional_ref = None
-                prestamo_aplicado = apply_excel_loan_as_active(conn, numero, prestamo_excel_id, titulo_visible, saldo_base_ref, prestamo_adicional_ref)
-                if not prestamo_aplicado:
-                    flash('No se encontró el préstamo histórico solicitado.')
-                    return redirect(url_for('main.socio_detalle', numero=numero))
-                conn.commit()
-                log_action(
-                    session.get('username', 'admin'),
-                    'Corrección de préstamo histórico',
-                    f'Socio {numero}: se aplicó como vigente el bloque {prestamo_excel_id} con título visible "{titulo_visible or prestamo_aplicado["titulo"]}".'
+                return process_excel_loan_admin_update(
+                    conn,
+                    numero,
+                    prestamo_excel_id,
+                    'main.socio_detalle',
+                    numero=numero,
                 )
-                flash('Préstamo histórico aplicado como vigente correctamente.')
-                return redirect(url_for('main.socio_detalle', numero=numero))
         periodo_cerrado = get_latest_closed_period(conn)
         periodo_actual = datetime.now().strftime('%Y-%m')
         socio = conn.execute("""
@@ -2083,8 +2271,8 @@ def socio_detalle(numero):
         )
         prestamo_excel_referencia = prestamo_excel_activo or next(
             (row for row in prestamos_excel if row.get('estado_visible') == 'Pagado'),
-            prestamos_excel[0] if prestamos_excel else None,
-        )
+            None,
+        ) or (prestamos_excel[0] if prestamos_excel else None)
         asistencia = conn.execute("SELECT * FROM asistencia WHERE socio_numero=? ORDER BY fecha DESC LIMIT 20", (numero,)).fetchall()
         historico_saldos = conn.execute(
             """
@@ -2120,7 +2308,7 @@ def socio_detalle(numero):
         cronograma_historico = []
         resumen_historico = None
         if prestamo_excel_referencia:
-            cronograma_historico = conn.execute(
+            cronograma_historico_full = conn.execute(
                 """
                 SELECT *
                 FROM prestamos_excel_historial_cuotas
@@ -2129,6 +2317,12 @@ def socio_detalle(numero):
                 """,
                 (prestamo_excel_referencia['id'],),
             ).fetchall()
+            cronograma_historico = filter_visible_excel_schedule(cronograma_historico_full, prestamo_excel_referencia)
+            resumen_visible_historico = summarize_excel_schedule(cronograma_historico)
+            prestamo_excel_referencia['interes_visible'] = resumen_visible_historico['intereses']
+            prestamo_excel_referencia['capital_visible'] = resumen_visible_historico['capital']
+            prestamo_excel_referencia['cuota_total_visible'] = resumen_visible_historico['total_pagable']
+            prestamo_excel_referencia['saldo_visible'] = resumen_visible_historico['saldo_final']
             resumen_historico = {
                 'intereses': float(prestamo_excel_referencia['interes_total'] or 0),
                 'capital': float(prestamo_excel_referencia['capital_total'] or 0),
@@ -2174,10 +2368,24 @@ def socio_detalle(numero):
     )
 
 
-@bp.route('/socio/<int:numero>/prestamo-excel/<int:prestamo_excel_id>')
+@bp.route('/socio/<int:numero>/prestamo-excel/<int:prestamo_excel_id>', methods=['GET', 'POST'])
 @login_required
 def prestamo_excel_detalle(numero, prestamo_excel_id):
     with connect_db() as conn:
+        if request.method == 'POST':
+            if session.get('role') != 'Administrador':
+                flash('Solo el administrador puede realizar esta acción.')
+                return redirect(url_for('main.prestamo_excel_detalle', numero=numero, prestamo_excel_id=prestamo_excel_id))
+            action = request.form.get('action', '').strip()
+            if action in {'aplicar_prestamo_excel', 'actualizar_prestamo_excel'}:
+                return process_excel_loan_admin_update(
+                    conn,
+                    numero,
+                    prestamo_excel_id,
+                    'main.prestamo_excel_detalle',
+                    numero=numero,
+                    prestamo_excel_id=prestamo_excel_id,
+                )
         periodo_cerrado = get_latest_closed_period(conn)
         socio = conn.execute(
             "SELECT numero, nombre FROM socios WHERE numero=?",
@@ -2213,6 +2421,8 @@ def prestamo_excel_detalle(numero, prestamo_excel_id):
     prestamo_excel_view['interes_total_visible'] = resumen_visible['intereses']
     prestamo_excel_view['capital_total_visible'] = resumen_visible['capital']
     prestamo_excel_view['cuota_total_visible'] = resumen_visible['total_pagable']
+    prestamo_excel_view['saldo_visible'] = resumen_visible['saldo_final']
+    prestamo_excel_view['interes_visible'] = resumen_visible['intereses']
     if prestamo_excel_view.get('saldo_base_ref') is None and resumen_visible['saldo_final']:
         prestamo_excel_view['saldo_base_ref'] = resumen_visible['saldo_final']
     if prestamo_excel_view.get('prestamo_adicional_ref') is None and prestamo_excel_view.get('monto_inicial') is not None:
@@ -2524,567 +2734,11 @@ def aportaciones_mensuales_imprimible():
         if not periodo:
             periodo = get_default_period(conn)
         context = get_aportaciones_period_context(conn, periodo)
+    context['periodo_label'] = format_period_label(periodo, periodo)
     context['fecha_emision'] = datetime.now().strftime('%d/%m/%Y %H:%M')
     response = make_response(render_template('aportaciones_mensuales_imprimible.html', **context))
     response.headers["Content-Type"] = "text/html; charset=utf-8"
     response.headers["Content-Disposition"] = f"inline; filename=aportaciones_mensuales_{periodo}.html"
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
-
-
-@bp.route('/cierre-mensual', methods=['GET', 'POST'])
-@login_required
-def cierre_mensual():
-    periodo = request.args.get('periodo', '').strip()
-    with connect_db() as conn:
-        if request.method == 'GET' and not periodo:
-            periodo = get_default_period(conn)
-            return redirect(url_for('main.cierre_mensual', periodo=periodo))
-        periodo = periodo or get_default_period(conn)
-        ensure_monthly_collections(conn, periodo)
-        if request.method == 'POST':
-            action = request.form.get('action', '').strip()
-            periodo_form = request.form.get('periodo', '').strip() or periodo
-            ensure_monthly_collections(conn, periodo_form)
-            cierre_actual = conn.execute(
-                "SELECT * FROM periodos WHERE periodo=?",
-                (periodo_form,),
-            ).fetchone()
-            colocacion_actual = get_period_placement_status(conn, periodo_form, cierre_actual['total_recaudado'] if cierre_actual else 0)
-
-            if action == 'cerrar_periodo':
-                if not cierre_actual:
-                    flash('No se encontró el período para cerrar.')
-                elif (colocacion_actual['saldo_por_colocar'] or 0) > 0.0001:
-                    flash(f'No se puede cerrar el período. Aún faltan S/ {colocacion_actual["saldo_por_colocar"]:.1f} por colocar.')
-                else:
-                    conn.execute(
-                        """
-                        UPDATE periodos
-                        SET estado='Cerrado',
-                            fecha_calculo=CURRENT_TIMESTAMP
-                        WHERE periodo=?
-                        """,
-                        (periodo_form,),
-                    )
-                    sync_dashboard_financial_snapshot(conn, periodo_form)
-                    conn.commit()
-                    log_action(
-                        session.get('username', 'sistema'),
-                        'Cierre de período',
-                        f'Período {periodo_form} cerrado manualmente.'
-                    )
-                    flash('Período cerrado correctamente.')
-                return redirect(url_for('main.cierre_mensual', periodo=periodo_form))
-
-            if action == 'abrir_mes_nuevo':
-                siguiente_periodo = get_next_period(periodo_form)
-                if not cierre_actual:
-                    flash('No se encontró el período actual para abrir el siguiente mes.')
-                    return redirect(url_for('main.cierre_mensual', periodo=periodo_form))
-                if (colocacion_actual['saldo_por_colocar'] or 0) > 0.0001:
-                    flash(f'No se puede abrir {siguiente_periodo}. Primero debes colocar todo el fondo de {periodo_form}. Aún faltan S/ {colocacion_actual["saldo_por_colocar"]:.1f}.')
-                    return redirect(url_for('main.cierre_mensual', periodo=periodo_form))
-                conn.execute(
-                    """
-                    UPDATE periodos
-                    SET estado='Cerrado',
-                        fecha_calculo=CURRENT_TIMESTAMP
-                    WHERE periodo=?
-                    """,
-                    (periodo_form,),
-                )
-                ensure_monthly_collections(conn, siguiente_periodo)
-                conn.commit()
-                log_action(
-                    session.get('username', 'sistema'),
-                    'Apertura de período',
-                    f'Se cerró {periodo_form} y se abrió el período {siguiente_periodo}.'
-                )
-                flash(f'Se cerró {periodo_form} y se abrió el nuevo período {siguiente_periodo}.')
-                return redirect(url_for('main.cierre_mensual', periodo=siguiente_periodo))
-
-        cierre = conn.execute(
-            "SELECT * FROM periodos WHERE periodo=?",
-            (periodo,),
-        ).fetchone()
-        periodo_historico_oficial = str(get_config_value(conn, 'resumen_financiero_periodo_oficial', '2026-03') or '2026-03')
-        siguiente_periodo_operativo = get_next_period(periodo_historico_oficial)
-        colocacion = get_period_placement_status(conn, periodo, cierre['total_recaudado'] if cierre else 0)
-        historico = conn.execute(
-            """
-            SELECT *
-            FROM periodos
-            ORDER BY periodo DESC
-            """
-        ).fetchall()
-    response = make_response(render_template(
-        'cierre_mensual.html',
-        periodo=periodo,
-        cierre=cierre,
-        historico=historico,
-        total_colocado=colocacion['total_colocado'] or 0,
-        saldo_por_colocar=colocacion['saldo_por_colocar'] or 0,
-        colocacion_fuente=colocacion['fuente'],
-        colocacion_excel_rows=colocacion['excel_rows'],
-        colocacion_detalle_rows=colocacion['detalle_rows'],
-        colocacion_origin_counts=colocacion['origin_counts'],
-        colocacion_completa=(colocacion['saldo_por_colocar'] or 0) <= 0.0001,
-        periodo_historico_oficial=periodo_historico_oficial,
-        siguiente_periodo_operativo=siguiente_periodo_operativo,
-        es_periodo_historico_oficial=(periodo == periodo_historico_oficial),
-    ))
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
-
-
-@bp.route('/nuevos-prestamos', methods=['GET', 'POST'])
-@login_required
-def nuevos_prestamos():
-    selected_id = request.args.get('prestamo_id', type=int)
-    periodo_query = request.args.get('periodo', '').strip()
-    filtro_query = request.args.get('filtro', 'todos').strip().lower()
-    with connect_db() as conn:
-        if request.method == 'GET' and not periodo_query:
-            periodo = get_default_period(conn)
-            return redirect(url_for('main.nuevos_prestamos', periodo=periodo, filtro=filtro_query if filtro_query in ('todos', 'manuales', 'automaticos') else 'todos'))
-        periodo = periodo_query or get_default_period(conn)
-        filtro = filtro_query if filtro_query in ('todos', 'manuales', 'automaticos') else 'todos'
-        ensure_monthly_collections(conn, periodo)
-
-        if request.method == 'POST':
-            action = request.form.get('action', '').strip()
-            periodo = request.form.get('periodo', '').strip() or periodo
-            filtro_post = request.form.get('filtro', filtro).strip().lower()
-            filtro = filtro_post if filtro_post in ('todos', 'manuales', 'automaticos') else 'todos'
-            ensure_monthly_collections(conn, periodo)
-            tasa_mensual = float(get_config_value(conn, 'tasa_prestamo_mensual', '0.01'))
-            min_cuotas = int(float(get_config_value(conn, 'min_cuotas_prestamo', '12')))
-            max_cuotas = int(float(get_config_value(conn, 'max_cuotas_prestamo', '84')))
-
-            if action == 'guardar_prioridades':
-                conn.execute("DELETE FROM prioridad_colocacion_manual WHERE periodo=?", (periodo,))
-                socios_ids = conn.execute("SELECT numero FROM socios ORDER BY numero").fetchall()
-                guardadas = 0
-                for row in socios_ids:
-                    raw = request.form.get(f'prioridad_{row["numero"]}', '').strip()
-                    if raw.isdigit():
-                        prioridad = int(raw)
-                        if prioridad > 0:
-                            conn.execute(
-                                "INSERT OR REPLACE INTO prioridad_colocacion_manual(periodo, socio_numero, prioridad) VALUES(?,?,?)",
-                                (periodo, row['numero'], prioridad),
-                            )
-                            guardadas += 1
-                conn.commit()
-                flash(f'Orden manual guardado. Prioridades actualizadas: {guardadas}.')
-                return redirect(url_for('main.nuevos_prestamos', periodo=periodo, filtro=filtro))
-
-            if action == 'limpiar_prioridades':
-                conn.execute("DELETE FROM prioridad_colocacion_manual WHERE periodo=?", (periodo,))
-                conn.commit()
-                flash('El orden manual se limpió para este período.')
-                return redirect(url_for('main.nuevos_prestamos', periodo=periodo, filtro=filtro))
-
-            if action in ('subir_prioridad', 'bajar_prioridad', 'enviar_arriba', 'enviar_abajo'):
-                socio_numero = request.form.get('socio_numero', type=int)
-                orden_actual = conn.execute(
-                    """
-                    SELECT s.numero
-                    FROM socios s
-                    LEFT JOIN prioridad_colocacion_manual pcm
-                      ON pcm.periodo=? AND pcm.socio_numero=s.numero
-                    LEFT JOIN (
-                        SELECT socio_numero, saldo
-                        FROM saldo_historico_mensual
-                        WHERE periodo=?
-                    ) shm ON shm.socio_numero=s.numero
-                    ORDER BY
-                        CASE WHEN pcm.prioridad IS NULL THEN 1 ELSE 0 END,
-                        pcm.prioridad ASC,
-                        COALESCE(shm.saldo, s.saldo, 0) ASC,
-                        s.numero ASC
-                    """,
-                    (periodo, periodo),
-                ).fetchall()
-                numeros = [row['numero'] for row in orden_actual]
-                if socio_numero in numeros:
-                    idx = numeros.index(socio_numero)
-                    if action == 'subir_prioridad' and idx > 0:
-                        numeros[idx - 1], numeros[idx] = numeros[idx], numeros[idx - 1]
-                    elif action == 'bajar_prioridad' and idx < len(numeros) - 1:
-                        numeros[idx + 1], numeros[idx] = numeros[idx], numeros[idx + 1]
-                    elif action == 'enviar_arriba' and idx > 0:
-                        numero = numeros.pop(idx)
-                        numeros.insert(0, numero)
-                    elif action == 'enviar_abajo' and idx < len(numeros) - 1:
-                        numero = numeros.pop(idx)
-                        numeros.append(numero)
-                    conn.execute("DELETE FROM prioridad_colocacion_manual WHERE periodo=?", (periodo,))
-                    for prioridad, numero in enumerate(numeros, start=1):
-                        conn.execute(
-                            """
-                            INSERT INTO prioridad_colocacion_manual(periodo, socio_numero, prioridad)
-                            VALUES(?,?,?)
-                            """,
-                            (periodo, numero, prioridad),
-                        )
-                    conn.commit()
-                    if action == 'subir_prioridad':
-                        movimiento = 'subida'
-                    elif action == 'bajar_prioridad':
-                        movimiento = 'bajada'
-                    elif action == 'enviar_arriba':
-                        movimiento = 'envio al inicio'
-                    else:
-                        movimiento = 'envio al final'
-                    flash(f'Orden manual actualizado: {movimiento}.')
-                else:
-                    flash('No se encontró el socio para mover la prioridad.')
-                return redirect(url_for('main.nuevos_prestamos', periodo=periodo, filtro=filtro))
-
-            if action == 'aplicar_sugerencia':
-                cierre = conn.execute("SELECT * FROM periodos WHERE periodo=?", (periodo,)).fetchone()
-                reservado = conn.execute(
-                    """
-                    SELECT COALESCE(SUM(monto), 0)
-                    FROM prestamos_nuevos
-                    WHERE periodo=? AND estado IN ('Reservado', 'Aprobado')
-                    """,
-                    (periodo,),
-                ).fetchone()[0]
-                fondo_disponible = max((cierre['total_recaudado'] if cierre else 0) - (reservado or 0), 0)
-                creados = 0
-                ultimo_id = None
-                sugerencias, _ = build_funding_suggestions(conn, periodo, fondo_disponible, min_cuotas, max_cuotas)
-                for socio_row in sugerencias:
-                    socio = {'numero': socio_row['numero'], 'nombre': socio_row['nombre']}
-                    ultimo_id = create_reserved_loan(
-                        conn,
-                        periodo,
-                        socio,
-                        socio_row['monto_sugerido'],
-                        socio_row['cuotas_sugeridas'],
-                        tasa_mensual,
-                        f'{periodo}-29',
-                    )
-                    creados += 1
-                conn.commit()
-                log_action(
-                    session.get('username', 'sistema'),
-                    'Aplicacion de sugerencia automatica',
-                    f'Periodo {periodo} - Prestamos creados: {creados}'
-                )
-                if creados:
-                    flash(f'Sugerencia aplicada correctamente. Préstamos creados: {creados}.')
-                    return redirect(url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=ultimo_id, filtro=filtro))
-                flash('No hubo préstamos sugeridos para crear en este período.')
-                return redirect(url_for('main.nuevos_prestamos', periodo=periodo, filtro=filtro))
-
-            if action in ('aprobar', 'anular'):
-                prestamo_id = request.form.get('prestamo_id', type=int)
-                prestamo = conn.execute(
-                    "SELECT * FROM prestamos_nuevos WHERE id=?",
-                    (prestamo_id,),
-                ).fetchone()
-                if not prestamo:
-                    flash('No se encontró el préstamo seleccionado.')
-                    return redirect(url_for('main.nuevos_prestamos', periodo=periodo, filtro=filtro))
-
-                if action == 'anular':
-                    if prestamo['estado'] == 'Aprobado':
-                        flash('No puedes anular aquí un préstamo que ya fue aprobado.')
-                    elif prestamo['estado'] == 'Anulado':
-                        flash('Ese préstamo ya estaba anulado.')
-                    else:
-                        create_loan_history_record(
-                            conn,
-                            prestamo['socio_numero'],
-                            prestamo['socio_nombre'],
-                            prestamo,
-                            'Anulacion',
-                            'Anulado',
-                            'Préstamo nuevo anulado antes de convertirse en cronograma real.',
-                            session.get('username', 'sistema'),
-                        )
-                        conn.execute(
-                            "UPDATE prestamos_nuevos SET estado='Anulado' WHERE id=?",
-                            (prestamo_id,),
-                        )
-                        conn.commit()
-                        log_action(
-                            session.get('username', 'sistema'),
-                            'Préstamo anulado',
-                            f'ID {prestamo_id} - Socio {prestamo["socio_numero"]} - Monto {prestamo["monto"]:.1f}'
-                        )
-                        flash('Préstamo anulado. El fondo quedó liberado nuevamente.')
-                    return redirect(url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=prestamo_id, filtro=filtro))
-
-                if prestamo['estado'] == 'Aprobado':
-                    flash('Ese préstamo ya fue aprobado.')
-                    return redirect(url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=prestamo_id, filtro=filtro))
-                if prestamo['estado'] == 'Anulado':
-                    flash('No se puede aprobar un préstamo que ya fue anulado.')
-                    return redirect(url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=prestamo_id, filtro=filtro))
-
-                cronograma = conn.execute(
-                    """
-                    SELECT *
-                    FROM prestamos_nuevos_cronograma
-                    WHERE prestamo_nuevo_id=?
-                    ORDER BY plazo
-                    """,
-                    (prestamo_id,),
-                ).fetchall()
-                if not cronograma:
-                    flash('El préstamo no tiene cronograma disponible para aprobar.')
-                    return redirect(url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=prestamo_id, filtro=filtro))
-
-                socio_anterior = conn.execute(
-                    "SELECT numero, nombre, meses, plazo_balance, fecha_prestamo, saldo FROM socios WHERE numero=?",
-                    (prestamo['socio_numero'],),
-                ).fetchone()
-                cuotas_anteriores = conn.execute(
-                    "SELECT * FROM cuotas WHERE socio_numero=? ORDER BY plazo, fecha",
-                    (prestamo['socio_numero'],),
-                ).fetchall()
-                create_loan_history_record(
-                    conn,
-                    prestamo['socio_numero'],
-                    prestamo['socio_nombre'],
-                    prestamo,
-                    'Aprobacion',
-                    'Aprobado',
-                    'Préstamo aprobado y cronograma anterior reemplazado por uno nuevo.',
-                    session.get('username', 'sistema'),
-                    snapshot_rows=cuotas_anteriores,
-                    socio_anterior=socio_anterior,
-                )
-                conn.execute("DELETE FROM cuotas WHERE socio_numero=?", (prestamo['socio_numero'],))
-                for row in cronograma:
-                    conn.execute(
-                        """
-                        INSERT INTO cuotas(socio_numero, plazo, fecha, prestamo, interes, abono_capital, cuota, saldo, hoja_origen)
-                        VALUES(?,?,?,?,?,?,?,?,?)
-                        """,
-                        (
-                            prestamo['socio_numero'],
-                            row['plazo'],
-                            row['fecha'],
-                            row['prestamo'],
-                            row['interes'],
-                            row['abono_capital'],
-                            row['cuota'],
-                            row['saldo'],
-                            f'prestamo_nuevo:{prestamo_id}',
-                        ),
-                    )
-
-                conn.execute(
-                    """
-                    UPDATE socios
-                    SET meses=?,
-                        plazo_balance=?,
-                        fecha_prestamo=?,
-                        saldo=?
-                    WHERE numero=?
-                    """,
-                    (
-                        prestamo['cuotas'],
-                        prestamo['cuotas'],
-                        prestamo['fecha_desembolso'],
-                        prestamo['cuota_inicial'],
-                        prestamo['socio_numero'],
-                    ),
-                )
-                conn.execute(
-                    "UPDATE prestamos_nuevos SET estado='Aprobado' WHERE id=?",
-                    (prestamo_id,),
-                )
-                conn.commit()
-                log_action(
-                    session.get('username', 'sistema'),
-                    'Préstamo aprobado',
-                    f'ID {prestamo_id} - Socio {prestamo["socio_numero"]} - Monto {prestamo["monto"]:.1f} - Cuotas {prestamo["cuotas"]}'
-                )
-                flash('Préstamo aprobado y aplicado al cronograma real del socio.')
-                return redirect(url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=prestamo_id, filtro=filtro))
-
-            socio_numero = request.form.get('socio_numero', type=int)
-            monto = request.form.get('monto', type=float)
-            cuotas = request.form.get('cuotas', type=int)
-            fecha_desembolso = request.form.get('fecha_desembolso', '').strip() or f'{periodo}-29'
-
-            cierre = conn.execute("SELECT * FROM periodos WHERE periodo=?", (periodo,)).fetchone()
-            colocacion = get_period_placement_status(conn, periodo, cierre['total_recaudado'] if cierre else 0)
-            reservado = colocacion['total_colocado']
-            fondo_disponible = colocacion['saldo_por_colocar']
-            socio = conn.execute("SELECT numero, nombre FROM socios WHERE numero=?", (socio_numero,)).fetchone()
-
-            error = None
-            if not socio:
-                error = 'Selecciona un socio válido.'
-            elif monto is None or monto <= 0:
-                error = 'Ingresa un monto válido.'
-            elif cuotas is None or cuotas < min_cuotas or cuotas > max_cuotas:
-                error = f'Las cuotas deben estar entre {min_cuotas} y {max_cuotas}.'
-            elif monto > fondo_disponible:
-                error = f'El monto excede el fondo disponible del período: S/ {fondo_disponible:.1f}.'
-
-            if error:
-                flash(error)
-                return redirect(url_for('main.nuevos_prestamos', periodo=periodo, filtro=filtro))
-
-            prestamo_id = create_reserved_loan(
-                conn,
-                periodo,
-                socio,
-                monto,
-                cuotas,
-                tasa_mensual,
-                fecha_desembolso,
-            )
-            conn.commit()
-            log_action(
-                session.get('username', 'sistema'),
-                'Nuevo prestamo reservado',
-                f'Periodo {periodo} - Socio {socio["numero"]} - Monto {monto:.1f} - Cuotas {cuotas}'
-            )
-            flash('Nuevo préstamo generado correctamente.')
-            return redirect(url_for('main.nuevos_prestamos', periodo=periodo, prestamo_id=prestamo_id, filtro=filtro))
-
-        cierre = conn.execute("SELECT * FROM periodos WHERE periodo=?", (periodo,)).fetchone()
-        periodo_historico_oficial = str(get_config_value(conn, 'resumen_financiero_periodo_oficial', '2026-03') or '2026-03')
-        siguiente_periodo_operativo = get_next_period(periodo_historico_oficial)
-        tasa_mensual = float(get_config_value(conn, 'tasa_prestamo_mensual', '0.01'))
-        min_cuotas = int(float(get_config_value(conn, 'min_cuotas_prestamo', '12')))
-        max_cuotas = int(float(get_config_value(conn, 'max_cuotas_prestamo', '84')))
-        colocacion = get_period_placement_status(conn, periodo, cierre['total_recaudado'] if cierre else 0)
-        reservado = colocacion['total_colocado']
-        fondo_total = cierre['total_recaudado'] if cierre else 0
-        fondo_disponible = colocacion['saldo_por_colocar']
-        porcentaje_colocado = round((((reservado or 0) / (fondo_total or 1)) * 100), 1) if (fondo_total or 0) > 0 else 0
-        socios = conn.execute("SELECT numero, nombre FROM socios ORDER BY numero").fetchall()
-        sugerencias, restante_sugerido = build_funding_suggestions(
-            conn,
-            periodo,
-            fondo_disponible,
-            min_cuotas,
-            max_cuotas,
-        )
-        prioridades = {
-            row['socio_numero']: row['prioridad']
-            for row in conn.execute(
-                """
-                SELECT socio_numero, prioridad
-                FROM prioridad_colocacion_manual
-                WHERE periodo=?
-                """,
-                (periodo,),
-            ).fetchall()
-        }
-        socios_orden_manual = conn.execute(
-            """
-            SELECT s.numero,
-                   s.nombre,
-                   pcm.prioridad,
-                   COALESCE(om.saldo_actual, s.saldo, 0) AS saldo_prioridad
-            FROM socios s
-            LEFT JOIN prioridad_colocacion_manual pcm
-              ON pcm.periodo=? AND pcm.socio_numero=s.numero
-            LEFT JOIN obligaciones_mensuales om
-              ON om.periodo=? AND om.socio_numero=s.numero
-            ORDER BY
-                CASE WHEN pcm.prioridad IS NULL THEN 1 ELSE 0 END,
-                pcm.prioridad ASC,
-                saldo_prioridad ASC,
-                s.numero ASC
-            """,
-            (periodo, periodo),
-        ).fetchall()
-        filtro_counts = {
-            'todos': len(socios_orden_manual),
-            'manuales': sum(1 for row in socios_orden_manual if prioridades.get(row['numero'])),
-            'automaticos': sum(1 for row in socios_orden_manual if not prioridades.get(row['numero'])),
-        }
-        resumen_prioridades = {
-            'manuales_activos': filtro_counts['manuales'],
-            'automaticos_activos': filtro_counts['automaticos'],
-            'socios_sugeridos_mes': len(sugerencias),
-            'monto_sugerido_mes': round(sum((row.get('monto_sugerido') or 0) for row in sugerencias), 1),
-            'restante_sin_sugerir': round(restante_sugerido or 0, 1),
-            'porcentaje_sugerido_fondo': round(
-                ((sum((row.get('monto_sugerido') or 0) for row in sugerencias) / (fondo_disponible or 1)) * 100),
-                1,
-            ) if (fondo_disponible or 0) > 0 else 0,
-        }
-        if filtro == 'manuales':
-            socios_orden_manual = [row for row in socios_orden_manual if prioridades.get(row['numero'])]
-            sugerencias = [row for row in sugerencias if row.get('prioridad_manual') is not None]
-        elif filtro == 'automaticos':
-            socios_orden_manual = [row for row in socios_orden_manual if not prioridades.get(row['numero'])]
-            sugerencias = [row for row in sugerencias if row.get('prioridad_manual') is None]
-        prestamos = conn.execute(
-            """
-            SELECT *
-            FROM prestamos_nuevos
-            WHERE periodo=?
-            ORDER BY id DESC
-            """,
-            (periodo,),
-        ).fetchall()
-        if not selected_id and prestamos:
-            selected_id = prestamos[0]['id']
-        selected_prestamo = conn.execute(
-            "SELECT * FROM prestamos_nuevos WHERE id=?",
-            (selected_id,),
-        ).fetchone() if selected_id else None
-        cronograma = conn.execute(
-            """
-            SELECT *
-            FROM prestamos_nuevos_cronograma
-            WHERE prestamo_nuevo_id=?
-            ORDER BY plazo
-            """,
-            (selected_id,),
-        ).fetchall() if selected_id else []
-
-    response = make_response(render_template(
-        'nuevos_prestamos.html',
-        periodo=periodo,
-        cierre=cierre,
-        socios=socios,
-        prestamos=prestamos,
-        prestamo=selected_prestamo,
-        cronograma=cronograma,
-        fondo_total=fondo_total or 0,
-        fondo_reservado=reservado or 0,
-        fondo_disponible=fondo_disponible or 0,
-        saldo_por_colocar=fondo_disponible or 0,
-        colocacion_fuente=colocacion['fuente'],
-        colocacion_excel_rows=colocacion['excel_rows'],
-        colocacion_detalle_rows=colocacion['detalle_rows'],
-        colocacion_origin_counts=colocacion['origin_counts'],
-        porcentaje_colocado=porcentaje_colocado,
-        colocacion_completa=(fondo_disponible or 0) <= 0.0001,
-        sugerencias=sugerencias,
-        restante_sugerido=restante_sugerido,
-        filtro=filtro,
-        filtro_counts=filtro_counts,
-        resumen_prioridades=resumen_prioridades,
-        prioridades=prioridades,
-        socios_orden_manual=socios_orden_manual,
-        tasa_mensual=tasa_mensual,
-        min_cuotas=min_cuotas,
-        max_cuotas=max_cuotas,
-        periodo_historico_oficial=periodo_historico_oficial,
-        siguiente_periodo_operativo=siguiente_periodo_operativo,
-        es_periodo_historico_oficial=(periodo == periodo_historico_oficial),
-    ))
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
@@ -3143,6 +2797,7 @@ def estado_cuenta_imprimible():
     numero = request.args.get('numero', type=int)
     with connect_db() as conn:
         periodo_cerrado = get_latest_closed_period(conn)
+        periodo_financiero = get_latest_financial_period(conn)
         socio = conn.execute("""
             SELECT s.*,
                    COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real
@@ -3166,6 +2821,9 @@ def estado_cuenta_imprimible():
             SELECT COUNT(DISTINCT CASE WHEN plazo BETWEEN 1 AND 240 THEN plazo END) as total_cuotas,
                    COALESCE(SUM(CASE WHEN plazo BETWEEN 1 AND 240 THEN interes ELSE 0 END), 0) as intereses,
                    COALESCE(SUM(CASE WHEN plazo BETWEEN 1 AND 240 THEN abono_capital ELSE 0 END), 0) as capital
+                   ,COALESCE(SUM(CASE WHEN plazo BETWEEN 1 AND 240 THEN cuota ELSE 0 END), 0) as total_pagable,
+                   MIN(CASE WHEN plazo BETWEEN 0 AND 240 THEN fecha END) as primera_fecha,
+                   MAX(CASE WHEN plazo BETWEEN 0 AND 240 THEN fecha END) as ultima_fecha
             FROM cuotas
             WHERE socio_numero=?
         """, (numero,)).fetchone()
@@ -3177,429 +2835,10 @@ def estado_cuenta_imprimible():
         resumen=resumen,
         saldo_actual=saldo_actual,
         periodo_cerrado=periodo_cerrado,
+        periodo_corte=periodo_financiero or periodo_cerrado,
+        periodo_corte_label=format_period_label(periodo_financiero or periodo_cerrado, 'Sin corte financiero'),
         fecha_emision=datetime.now().strftime('%d/%m/%Y %H:%M'),
     )
-
-
-@bp.route('/reuniones', methods=['GET', 'POST'])
-@login_required
-def reuniones():
-    with connect_db() as conn:
-        periodo = request.args.get('periodo', '').strip()
-        if not periodo:
-            periodo = get_default_period(conn)
-            return redirect(url_for('main.reuniones', periodo=periodo))
-
-        ensure_monthly_collections(conn, periodo)
-        cleanup_legacy_auto_reunion_assignment(conn, periodo)
-
-        if request.method == 'POST':
-            if not role_can_access_endpoint(session.get('role'), 'main.reuniones', write=True):
-                flash('Tu rol no tiene permiso para realizar esta acción.')
-                return redirect(url_for('main.reuniones', periodo=periodo))
-
-            action = request.form.get('action', '').strip()
-            if action == 'guardar_reunion':
-                socio_numero = request.form.get('socio_numero', '').strip()
-                estado = request.form.get('estado', 'Pendiente').strip() or 'Pendiente'
-                fecha_programada = request.form.get('fecha_programada', '').strip() or f'{periodo}-01'
-                fecha_realizada = request.form.get('fecha_realizada', '').strip() or None
-                tipo_via = request.form.get('tipo_via', '').strip()
-                direccion_reunion = request.form.get('direccion_reunion', '').strip()
-                observacion = request.form.get('observacion', '').strip()
-                socio = conn.execute(
-                    "SELECT numero, nombre FROM socios WHERE numero=?",
-                    (socio_numero,),
-                ).fetchone() if socio_numero.isdigit() else None
-                if not socio:
-                    flash('Selecciona un socio válido para la reunión del período.')
-                else:
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO reuniones_mensuales(
-                            periodo, socio_numero, socio_nombre, estado, fecha_programada, fecha_realizada, tipo_via, direccion_reunion, observacion, actualizado_por, actualizado_en
-                        ) VALUES(?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-                        """,
-                        (
-                            periodo,
-                            socio['numero'],
-                            socio['nombre'],
-                            estado,
-                            fecha_programada,
-                            fecha_realizada,
-                            tipo_via or None,
-                            direccion_reunion or None,
-                            observacion,
-                            session.get('username', 'sistema'),
-                        ),
-                    )
-                    conn.commit()
-                    log_action(session.get('username', 'sistema'), 'Control de reuniones', f'Período {periodo}: reunión asignada a socio {socio["numero"]}.')
-                    flash('Reunión del período actualizada correctamente.')
-                return redirect(url_for('main.reuniones', periodo=periodo))
-
-            if action == 'registrar_permiso':
-                socio_numero = request.form.get('socio_numero', '').strip()
-                fecha_permiso = request.form.get('fecha_permiso', '').strip() or f'{periodo}-01'
-                motivo = request.form.get('motivo', '').strip() or 'Otros'
-                observacion = request.form.get('observacion', '').strip()
-                documento = request.files.get('documento_permiso')
-                socio = conn.execute(
-                    "SELECT numero, nombre FROM socios WHERE numero=?",
-                    (socio_numero,),
-                ).fetchone() if socio_numero.isdigit() else None
-                if not socio:
-                    flash('Selecciona un socio válido para registrar el permiso.')
-                elif motivo not in PERMISO_MOTIVOS:
-                    flash('Selecciona un motivo válido para el permiso.')
-                else:
-                    documento_path = save_permiso_document(documento, periodo, socio['numero'])
-                    if documento_path is False:
-                        flash('El documento del permiso debe ser PDF, DOC o DOCX.')
-                        return redirect(url_for('main.reuniones', periodo=periodo))
-                    conn.execute(
-                        """
-                        INSERT INTO permisos_mensuales(
-                            periodo, socio_numero, socio_nombre, fecha_permiso, motivo, documento, observacion, registrado_por
-                        ) VALUES(?,?,?,?,?,?,?,?)
-                        """,
-                        (
-                            periodo,
-                            socio['numero'],
-                            socio['nombre'],
-                            fecha_permiso,
-                            motivo,
-                            documento_path,
-                            observacion,
-                            session.get('username', 'sistema'),
-                        ),
-                    )
-                    conn.commit()
-                    log_action(session.get('username', 'sistema'), 'Control de permisos', f'Período {periodo}: permiso registrado para socio {socio["numero"]}.')
-                    flash('Permiso registrado correctamente.')
-                return redirect(url_for('main.reuniones', periodo=periodo))
-
-            if action == 'eliminar_permiso':
-                permiso_id = request.form.get('permiso_id', '').strip()
-                permiso = conn.execute(
-                    "SELECT * FROM permisos_mensuales WHERE id=? AND periodo=?",
-                    (permiso_id, periodo),
-                ).fetchone()
-                if permiso:
-                    delete_permiso_document_if_local(permiso['documento'])
-                    conn.execute("DELETE FROM permisos_mensuales WHERE id=?", (permiso['id'],))
-                    conn.commit()
-                    log_action(session.get('username', 'sistema'), 'Control de permisos', f'Período {periodo}: permiso eliminado #{permiso["id"]}.')
-                    flash('Permiso eliminado correctamente.')
-                return redirect(url_for('main.reuniones', periodo=periodo))
-
-        reunion_periodo = conn.execute(
-            """
-            SELECT *
-            FROM reuniones_mensuales
-            WHERE periodo=?
-            """,
-            (periodo,),
-        ).fetchone()
-        socios = conn.execute("SELECT numero, nombre FROM socios ORDER BY numero").fetchall()
-        periodos = conn.execute("SELECT periodo FROM periodos ORDER BY periodo DESC").fetchall()
-        permisos_registrados = conn.execute(
-            """
-            SELECT *
-            FROM permisos_mensuales
-            WHERE periodo=?
-            ORDER BY fecha_permiso DESC, id DESC
-            """,
-            (periodo,),
-        ).fetchall()
-        permisos_resumen = conn.execute(
-            """
-            SELECT socio_numero, socio_nombre, COUNT(*) as total_permisos
-            FROM permisos_mensuales
-            WHERE periodo=?
-            GROUP BY socio_numero, socio_nombre
-            ORDER BY total_permisos DESC, socio_numero ASC
-            """,
-            (periodo,),
-        ).fetchall()
-        obligaciones = conn.execute(
-            """
-            SELECT socio_numero, socio_nombre, total_mes
-            FROM obligaciones_mensuales
-            WHERE periodo=?
-            ORDER BY socio_numero
-            """,
-              (periodo,),
-          ).fetchall()
-        lugar_reunion = '-'
-        if reunion_periodo:
-            partes_lugar = [reunion_periodo['tipo_via'] or '', reunion_periodo['direccion_reunion'] or '']
-            lugar_reunion = ' '.join([parte.strip() for parte in partes_lugar if parte and parte.strip()]) or '-'
-    return render_template(
-        'reuniones_control.html',
-        periodo=periodo,
-        reunion_periodo=reunion_periodo,
-        socios=socios,
-        periodos=periodos,
-        permisos_registrados=permisos_registrados,
-        permisos_resumen=permisos_resumen,
-        obligaciones=obligaciones,
-        reunion_tipos_via=REUNION_TIPOS_VIA,
-        lugar_reunion=lugar_reunion,
-        permiso_motivos=PERMISO_MOTIVOS,
-        build_permiso_document_url=build_permiso_document_url,
-        puede_editar=role_can_access_endpoint(session.get('role'), 'main.reuniones', write=True),
-    )
-
-
-@bp.route('/reportes')
-@login_required
-def reportes():
-    with connect_db() as conn:
-        periodo_actual = get_default_period(conn)
-        ensure_monthly_collections(conn, periodo_actual)
-        resumen = conn.execute("""
-            SELECT COUNT(*) as socios,
-                   COALESCE(SUM(saldo_actual),0) as saldo_total,
-                   COALESCE(AVG(saldo_actual),0) as saldo_promedio,
-                   COALESCE(MAX(saldo_actual),0) as saldo_max
-            FROM obligaciones_mensuales
-            WHERE periodo=?
-        """, (periodo_actual,)).fetchone()
-        top = conn.execute("""
-            SELECT s.nombre,
-                   COALESCE(om.saldo_actual, s.saldo, 0) as saldo_periodo,
-                   s.fecha_prestamo,
-                   COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real
-            FROM socios s
-            LEFT JOIN cuotas c ON c.socio_numero = s.numero
-            LEFT JOIN obligaciones_mensuales om ON om.periodo=? AND om.socio_numero=s.numero
-            GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos
-            ORDER BY COALESCE(om.saldo_actual, s.saldo, 0) DESC, s.numero ASC
-            LIMIT 10
-        """, (periodo_actual,)).fetchall()
-        morosos = []
-        mensual = conn.execute("""
-            SELECT substr(fecha,1,7) as periodo,
-                   ROUND(SUM(interes),2) as intereses,
-                   ROUND(SUM(abono_capital),2) as capital,
-                   ROUND(SUM(cuota),2) as cuotas
-            FROM cuotas
-            WHERE fecha IS NOT NULL
-            GROUP BY substr(fecha,1,7)
-            ORDER BY periodo DESC
-            LIMIT 12
-        """).fetchall()
-        prestamos_multiples = conn.execute(
-            """
-            SELECT h.socio_numero as numero,
-                   COALESCE(MAX(h.socio_nombre), s.nombre) as nombre,
-                   COUNT(*) as total_prestamos,
-                   COALESCE(SUM(CASE WHEN h.es_activo=1 AND substr(h.fecha_inicio, 1, 7)='2026-03' THEN 1 ELSE 0 END), 0) as tiene_marzo_2026,
-                   MAX(CASE WHEN h.es_activo=1 THEN COALESCE(h.titulo_manual, h.titulo) END) as prestamo_activo,
-                   MAX(CASE WHEN h.es_activo=1 THEN h.fecha_inicio END) as fecha_prestamo_activo
-            FROM prestamos_excel_historial h
-            LEFT JOIN socios s ON s.numero = h.socio_numero
-            WHERE COALESCE(h.oculto_manual, 0)=0
-            GROUP BY h.socio_numero
-            HAVING COUNT(*) > 1
-            ORDER BY total_prestamos DESC, h.socio_numero ASC
-            """
-        ).fetchall()
-        prestamos_multiples = [
-            {
-                **dict(row),
-                'prestamo_activo': loan_title_visible(row['fecha_prestamo_activo'], row['prestamo_activo'] or '-'),
-            }
-            for row in prestamos_multiples
-        ]
-        resumen_prestamos_multiples = {
-            'socios_multiples': len(prestamos_multiples),
-            'socios_marzo_2026': sum([1 for row in prestamos_multiples if row['tiene_marzo_2026']]),
-        }
-    return render_template(
-        'reportes.html',
-        resumen=resumen,
-        top=top,
-        morosos=morosos,
-        mensual=mensual,
-        prestamos_multiples=prestamos_multiples,
-        resumen_prestamos_multiples=resumen_prestamos_multiples,
-    )
-
-
-@bp.route('/reportes/saldo-actual')
-@login_required
-def saldo_actual():
-    umbral = 30000
-    with connect_db() as conn:
-        periodo = request.args.get('periodo', '').strip() or get_latest_financial_period(conn) or get_default_period(conn)
-        cierre_periodo = conn.execute(
-            "SELECT * FROM periodos WHERE periodo=?",
-            (periodo,),
-        ).fetchone()
-        snapshot_periodo = get_financial_snapshot_for_period(conn, periodo) or {
-            'saldo_actual_total': 0,
-            'acciones_por_socio': 0,
-            'total_socios': 0,
-        }
-        colocacion_periodo = get_period_placement_status(
-            conn,
-            periodo,
-            cierre_periodo['total_recaudado'] if cierre_periodo else 0,
-        )
-        try:
-            total_prestamo_acumulado = float(
-                get_config_value(conn, 'total_prestamo_acumulado_oficial', 0) or 0
-            )
-        except Exception:
-            total_prestamo_acumulado = 0
-        rows = conn.execute(
-            """
-            SELECT periodo, socio_numero, socio_nombre, saldo, fuente
-            FROM saldo_historico_mensual
-            WHERE periodo=?
-            ORDER BY saldo ASC, socio_nombre ASC
-            """
-        , (periodo,)).fetchall()
-
-    saldos = []
-    max_saldo = max([row['saldo'] for row in rows], default=1)
-    for row in rows:
-        saldos.append(
-            {
-                'numero': row['socio_numero'],
-                'nombre': row['socio_nombre'],
-                'saldo': row['saldo'],
-                'fuente': row['fuente'],
-                'pct': round((row['saldo'] / max_saldo) * 100, 2),
-                'supera_umbral': row['saldo'] >= umbral,
-            }
-        )
-
-    resumen = {
-        'cantidad': len(saldos),
-        'minimo': min([row['saldo'] for row in rows], default=0),
-        'maximo': max_saldo if rows else 0,
-        'promedio': round(sum([row['saldo'] for row in rows]) / len(rows), 2) if rows else 0,
-        'vinculados': len([row for row in rows if row['socio_numero'] is not None]),
-    }
-    cierre_historico = {
-        'periodo': periodo,
-        'periodo_label': format_period_label(periodo, periodo),
-        'estado': cierre_periodo['estado'] if cierre_periodo else 'Sin cierre',
-        'saldo_actual_total': round(float(snapshot_periodo['saldo_actual_total'] or 0), 1),
-        'acciones_por_socio': round(float(snapshot_periodo['acciones_por_socio'] or 0), 1),
-        'total_prestamo_acumulado': round(float(total_prestamo_acumulado or 0), 1),
-        'total_mensual': round(float(cierre_periodo['total_recaudado'] or 0), 1) if cierre_periodo else 0,
-        'ya_colocado': round(float(colocacion_periodo['total_colocado'] or 0), 1),
-        'saldo_por_colocar': round(float(colocacion_periodo['saldo_por_colocar'] or 0), 1),
-    }
-    composicion_mes = {
-        'cuotas_mes': round(float(cierre_periodo['total_prestamos'] or 0), 1) if cierre_periodo else 0,
-        'aportes_fijos': round(float(cierre_periodo['total_aportes'] or 0), 1) if cierre_periodo else 0,
-        'total_mensual': round(float(cierre_periodo['total_recaudado'] or 0), 1) if cierre_periodo else 0,
-    }
-    colocaciones = [
-        {
-            'numero': row['socio_numero'],
-            'nombre': row['socio_nombre'],
-            'fecha_inicio': row['fecha_inicio'],
-            'monto_inicial': round(float(row['monto_inicial'] or 0), 1),
-            'cuotas': row['plazo_total'],
-            'origen': row['origen'],
-        }
-        for row in colocacion_periodo['detalle_rows']
-    ]
-
-    return render_template(
-        'saldo_actual.html',
-        saldos=saldos,
-        resumen=resumen,
-        umbral=umbral,
-        cierre_historico=cierre_historico,
-        composicion_mes=composicion_mes,
-        colocaciones=colocaciones,
-    )
-
-
-@bp.route('/reportes/saldos-marzo-2026')
-@login_required
-def saldos_marzo_2026():
-    periodo = request.args.get('periodo', '').strip()
-    if periodo:
-        return redirect(url_for('main.saldo_actual', periodo=periodo))
-    return redirect(url_for('main.saldo_actual'))
-
-
-@bp.route('/reportes/saldo-actual/vincular', methods=['GET', 'POST'])
-@admin_required
-def vincular_saldo_actual():
-    with connect_db() as conn:
-        if request.method == 'POST':
-            rows = conn.execute(
-                """
-                SELECT id, socio_numero
-                FROM saldo_historico_mensual
-                WHERE periodo='2026-03'
-                ORDER BY saldo ASC, socio_nombre ASC
-                """
-            ).fetchall()
-
-            cambios = 0
-            for row in rows:
-                field_name = f"asignacion_{row['id']}"
-                raw_value = request.form.get(field_name, '').strip()
-                nuevo_numero = int(raw_value) if raw_value.isdigit() else None
-                if nuevo_numero != row['socio_numero']:
-                    conn.execute(
-                        "UPDATE saldo_historico_mensual SET socio_numero=? WHERE id=?",
-                        (nuevo_numero, row['id'])
-                    )
-                    cambios += 1
-
-            conn.commit()
-            log_action(
-                session.get('username', 'admin'),
-                'Vinculacion manual de saldos',
-                f'Marzo 2026: {cambios} cambios guardados'
-            )
-            flash(f'Vinculaciones guardadas correctamente: {cambios}.')
-            return redirect(url_for('main.vincular_saldo_actual'))
-
-        pendientes = conn.execute(
-            """
-            SELECT id, socio_nombre, saldo, socio_numero
-            FROM saldo_historico_mensual
-            WHERE periodo='2026-03' AND socio_numero IS NULL
-            ORDER BY saldo ASC, socio_nombre ASC
-            """
-        ).fetchall()
-        socios = conn.execute(
-            "SELECT numero, nombre FROM socios ORDER BY nombre ASC, numero ASC"
-        ).fetchall()
-        vinculados = conn.execute(
-            """
-            SELECT h.id, h.socio_nombre, h.saldo, h.socio_numero, s.nombre as socio_vinculado
-            FROM saldo_historico_mensual h
-            LEFT JOIN socios s ON s.numero = h.socio_numero
-            WHERE h.periodo='2026-03' AND h.socio_numero IS NOT NULL
-            ORDER BY h.saldo ASC, h.socio_nombre ASC
-            """
-        ).fetchall()
-
-    return render_template(
-        'vincular_saldo_actual.html',
-        pendientes=pendientes,
-        vinculados=vinculados,
-        socios=socios,
-    )
-
-
-@bp.route('/reportes/saldos-marzo-2026/vincular', methods=['GET', 'POST'])
-@admin_required
-def vincular_saldos_marzo_2026():
-    return redirect(url_for('main.vincular_saldo_actual'))
 
 
 @bp.route('/fondo-total')
@@ -3686,83 +2925,13 @@ def fondo_total():
     )
 
 
-@bp.route('/reportes/mensual.csv')
-@login_required
-def reporte_mensual_csv():
-    with connect_db() as conn:
-        rows = conn.execute("""
-            SELECT substr(fecha,1,7) as periodo,
-                   ROUND(SUM(interes),2) as intereses,
-                   ROUND(SUM(abono_capital),2) as capital,
-                   ROUND(SUM(cuota),2) as cuotas
-            FROM cuotas
-            WHERE fecha IS NOT NULL
-            GROUP BY substr(fecha,1,7)
-            ORDER BY periodo DESC
-        """).fetchall()
-    si = io.StringIO()
-    cw = csv.writer(si)
-    cw.writerow(['Periodo', 'Intereses', 'Capital', 'Cuotas'])
-    for r in rows:
-        cw.writerow([r['periodo'], r['intereses'], r['capital'], r['cuotas']])
-    output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = "attachment; filename=resumen_mensual_jawilvio_v10.csv"
-    output.headers["Content-type"] = "text/csv; charset=utf-8"
-    return output
-
-
-@bp.route('/graficos')
-@login_required
-def graficos():
-    with connect_db() as conn:
-        mensual = conn.execute("""
-            SELECT substr(fecha,1,7) as periodo,
-                   ROUND(SUM(interes),2) as intereses,
-                   ROUND(SUM(abono_capital),2) as capital,
-                   ROUND(SUM(cuota),2) as cuotas
-            FROM cuotas
-            WHERE fecha IS NOT NULL
-            GROUP BY substr(fecha,1,7)
-            ORDER BY periodo DESC
-            LIMIT 12
-        """).fetchall()
-    mensual = list(reversed(mensual))
-    max_cuota = max([r['cuotas'] or 0 for r in mensual], default=1)
-    return render_template('graficos.html', mensual=mensual, max_cuota=max_cuota)
-
-
-@bp.route('/asistencia', methods=['GET', 'POST'])
-@login_required
-def asistencia():
-    with connect_db() as conn:
-        if request.method == 'POST':
-            socio_numero = int(request.form['socio_numero'])
-            socio = conn.execute("SELECT nombre FROM socios WHERE numero=?", (socio_numero,)).fetchone()
-            conn.execute(
-                "INSERT INTO asistencia(socio_numero, socio_nombre, fecha, estado, observacion) VALUES(?,?,?,?,?)",
-                (
-                    socio_numero,
-                    socio['nombre'] if socio else str(socio_numero),
-                    request.form['fecha'],
-                    request.form['estado'],
-                    request.form.get('observacion', ''),
-                )
-            )
-            conn.commit()
-            log_action(session.get('username', 'sistema'), 'Registro de asistencia', f"Socio {socio_numero} - {request.form['estado']}")
-            flash('Asistencia registrada correctamente.')
-            return redirect(url_for('main.asistencia'))
-        socios = conn.execute("SELECT numero, nombre FROM socios ORDER BY numero").fetchall()
-        registros = conn.execute("SELECT * FROM asistencia ORDER BY fecha DESC, id DESC LIMIT 50").fetchall()
-    return render_template('asistencia.html', socios=socios, registros=registros, hoy=datetime.now().strftime('%Y-%m-%d'))
-
-
 @bp.route('/estado-general.pdf')
 @login_required
 def pdf_estado_general():
     with connect_db() as conn:
         periodo_actual = get_default_period(conn)
         ensure_monthly_collections(conn, periodo_actual)
+        periodo_financiero = get_latest_financial_period(conn) or periodo_actual
         total_socios = conn.execute("SELECT COUNT(*) FROM socios").fetchone()[0]
         total_prestamos = conn.execute(
             """
@@ -3784,6 +2953,8 @@ def pdf_estado_general():
         capital = conn.execute("SELECT COALESCE(SUM(abono_capital),0) FROM cuotas").fetchone()[0]
         intereses = conn.execute("SELECT COALESCE(SUM(interes),0) FROM cuotas").fetchone()[0]
         cuotas = conn.execute("SELECT COALESCE(SUM(cuota),0) FROM cuotas").fetchone()[0]
+        promedio_saldo = (float(saldo or 0) / total_socios) if total_socios else 0
+        total_financiero = float(saldo or 0) + float(capital or 0) + float(intereses or 0)
     html = render_template(
         'estado_general_pdf.html',
         total_socios=total_socios,
@@ -3793,7 +2964,12 @@ def pdf_estado_general():
         capital=capital,
         intereses=intereses,
         cuotas=cuotas,
-        fecha=datetime.now().strftime('%Y-%m-%d %H:%M'),
+        promedio_saldo=promedio_saldo,
+        total_financiero=total_financiero,
+        periodo_actual=periodo_actual,
+        periodo_financiero=periodo_financiero,
+        periodo_label=format_period_label(periodo_financiero, periodo_financiero),
+        fecha=datetime.now().strftime('%d/%m/%Y %H:%M'),
     )
     response = make_response(html)
     response.headers["Content-Type"] = "text/html; charset=utf-8"
@@ -3807,48 +2983,78 @@ def reporte_imprimible():
     with connect_db() as conn:
         periodo_actual = get_default_period(conn)
         ensure_monthly_collections(conn, periodo_actual)
+        reunion_periodo = conn.execute(
+            """
+            SELECT *
+            FROM reuniones_mensuales
+            WHERE periodo=?
+            """,
+            (periodo_actual,),
+        ).fetchone()
+        total_permisos_periodo = int(
+            conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM permisos_mensuales
+                WHERE periodo=?
+                """,
+                (periodo_actual,),
+            ).fetchone()[0]
+            or 0
+        )
         socios = conn.execute("""
             SELECT s.*,
                    COALESCE(om.saldo_actual, s.saldo, 0) as saldo_periodo,
-                   COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real
+                   COALESCE(MAX(CASE WHEN c.plazo BETWEEN 1 AND 240 THEN c.plazo END), s.plazo_balance, s.meses) as plazo_real,
+                   COALESCE(pm.total_permisos, 0) as permisos_periodo,
+                   CASE WHEN rm.socio_numero IS NOT NULL THEN 1 ELSE 0 END as reunion_asignada,
+                   rm.estado as reunion_estado,
+                   rm.fecha_programada as reunion_fecha_programada
             FROM socios s
             LEFT JOIN cuotas c ON c.socio_numero = s.numero
             LEFT JOIN obligaciones_mensuales om ON om.periodo=? AND om.socio_numero=s.numero
-            GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos
+            LEFT JOIN (
+                SELECT socio_numero, COUNT(*) as total_permisos
+                FROM permisos_mensuales
+                WHERE periodo=?
+                GROUP BY socio_numero
+            ) pm ON pm.socio_numero = s.numero
+            LEFT JOIN (
+                SELECT socio_numero, estado, fecha_programada
+                FROM reuniones_mensuales
+                WHERE periodo=?
+            ) rm ON rm.socio_numero = s.numero
+            GROUP BY s.id, s.numero, s.nombre, s.meses, s.plazo_balance, s.fecha_prestamo, s.saldo, s.mes_2026, s.reunion, s.permisos,
+                     om.saldo_actual, pm.total_permisos, rm.socio_numero, rm.estado, rm.fecha_programada
             ORDER BY s.numero
-        """, (periodo_actual,)).fetchall()
-        
+        """, (periodo_actual, periodo_actual, periodo_actual)).fetchall()
         cuotas = conn.execute("SELECT * FROM cuotas ORDER BY fecha LIMIT 50").fetchall()
-       
         resumen = conn.execute("""
             SELECT COUNT(*) as socios,
                    COALESCE(SUM(saldo_actual),0) as saldo_total
             FROM obligaciones_mensuales
             WHERE periodo=?
         """, (periodo_actual,)).fetchone()
-
-        reunion_periodo = conn.execute("""
-            SELECT socio_numero,
-                   socio_nombre,
-                   estado,
-                   tipo_via,
-                   direccion_reunion
-            FROM reuniones_mensuales
-            WHERE periodo=?
-            LIMIT 1
-        """, (periodo_actual,)).fetchone()
-    
-        return render_template(
-            'reporte_imprimible.html',
-            socios=socios,
-            cuotas=cuotas,
-            resumen=resumen,
-            periodo_actual=periodo_actual,
-            fecha_emision=datetime.now().strftime('%d/%m/%Y %H:%M'),
-            reunion_periodo=reunion_periodo,
-            app_nombre="Asociación JAWILVIO",
-            app_ubicacion="Celendín, Cajamarca"
-        )
+        total_saldo_listado = sum(float(s['saldo_periodo'] or 0) for s in socios)
+        total_permisos_listados = sum(int(s['permisos_periodo'] or 0) for s in socios)
+        lugar_reunion = '-'
+        if reunion_periodo:
+            partes_lugar = [reunion_periodo['tipo_via'] or '', reunion_periodo['direccion_reunion'] or '']
+            lugar_reunion = ' '.join([parte.strip() for parte in partes_lugar if parte and parte.strip()]) or '-'
+    return render_template(
+        'reporte_imprimible.html',
+        socios=socios,
+        cuotas=cuotas,
+        resumen=resumen,
+        periodo_actual=periodo_actual,
+        reunion_periodo=reunion_periodo,
+        lugar_reunion=lugar_reunion,
+        total_permisos_periodo=total_permisos_periodo,
+        total_saldo_listado=total_saldo_listado,
+        total_permisos_listados=total_permisos_listados,
+        periodo_label=format_period_label(periodo_actual, periodo_actual),
+        fecha_emision=datetime.now().strftime('%d/%m/%Y %H:%M'),
+    )
 
 
 @bp.route('/morosos.csv')
@@ -3873,6 +3079,7 @@ def backup():
     excel_path = current_app.config.get('EXCEL_PATH')
     photos_dir = current_app.config.get('SOCIOS_PHOTO_UPLOAD_DIR')
     permisos_dir = current_app.config.get('PERMISOS_UPLOAD_DIR')
+    branding_dir = current_app.config.get('BRANDING_UPLOAD_DIR')
 
     zip_buffer = io.BytesIO()
     with connect_db() as conn:
@@ -3926,6 +3133,12 @@ def backup():
                     file_path = os.path.join(root, file_name)
                     rel_path = os.path.relpath(file_path, permisos_dir)
                     zf.write(file_path, arcname=os.path.join('permisos_documentos', rel_path).replace('\\', '/'))
+        if branding_dir and os.path.isdir(branding_dir):
+            for root, _, files in os.walk(branding_dir):
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    rel_path = os.path.relpath(file_path, branding_dir)
+                    zf.write(file_path, arcname=os.path.join('branding', rel_path).replace('\\', '/'))
         zf.writestr('metadata/resumen.json', json.dumps(metadata, ensure_ascii=False, indent=2))
 
     output = make_response(zip_buffer.getvalue())
@@ -3941,6 +3154,7 @@ def restaurar_respaldo():
     excel_path = current_app.config.get('EXCEL_PATH')
     photos_dir = current_app.config.get('SOCIOS_PHOTO_UPLOAD_DIR')
     permisos_dir = current_app.config.get('PERMISOS_UPLOAD_DIR')
+    branding_dir = current_app.config.get('BRANDING_UPLOAD_DIR')
     restore_backup_dir = os.path.join(current_app.instance_path, 'restore_backups')
 
     if request.method == 'POST':
@@ -4036,6 +3250,23 @@ def restaurar_respaldo():
                         if restored_docs:
                             restored_parts.append(f'documentos de permisos ({restored_docs})')
 
+                    restored_branding = 0
+                    if branding_dir:
+                        os.makedirs(branding_dir, exist_ok=True)
+                        for name in names:
+                            if not name.startswith('branding/') or name.endswith('/'):
+                                continue
+                            rel_path = os.path.normpath(name.split('/', 1)[1])
+                            if rel_path.startswith('..') or os.path.isabs(rel_path):
+                                continue
+                            branding_target = os.path.join(branding_dir, rel_path)
+                            os.makedirs(os.path.dirname(branding_target), exist_ok=True)
+                            with open(branding_target, 'wb') as restored_branding_file:
+                                restored_branding_file.write(zf.read(name))
+                            restored_branding += 1
+                        if restored_branding:
+                            restored_parts.append(f'branding ({restored_branding})')
+
             try:
                 with connect_db() as conn:
                     conn.execute(
@@ -4085,126 +3316,14 @@ def restaurar_respaldo():
     return render_template('restaurar_respaldo.html', restore_info=restore_info)
 
 
-@bp.route('/usuarios', methods=['GET', 'POST'])
-@admin_required
-def usuarios():
-    with connect_db() as conn:
-        if request.method == 'POST':
-            action = request.form.get('action', '').strip()
-            if action == 'create_user':
-                username = request.form.get('username', '').strip()
-                password = request.form.get('password', '').strip()
-                role = request.form.get('role', '').strip()
-                if not username or not password or not role:
-                    flash('Completa usuario, contraseña y rol.')
-                else:
-                    exists = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
-                    if exists:
-                        flash('Ese nombre de usuario ya existe.')
-                    else:
-                        conn.execute(
-                            "INSERT INTO users(username,password,role,estado) VALUES(?,?,?, 'Activo')",
-                            (username, password, role),
-                        )
-                        conn.commit()
-                        log_action(session.get('username', 'admin'), 'Gestión de usuarios', f'Usuario creado: {username} ({role})')
-                        flash('Usuario creado correctamente.')
-                return redirect(url_for('main.usuarios'))
-            if action == 'toggle_status':
-                user_id = request.form.get('user_id', '').strip()
-                user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-                if not user:
-                    flash('No se encontró el usuario solicitado.')
-                elif user['id'] == session.get('user_id'):
-                    flash('No puedes suspender tu propio usuario desde esta pantalla.')
-                else:
-                    nuevo_estado = 'Activo' if user['estado'] == 'Suspendido' else 'Suspendido'
-                    conn.execute("UPDATE users SET estado=? WHERE id=?", (nuevo_estado, user['id']))
-                    conn.commit()
-                    log_action(session.get('username', 'admin'), 'Gestión de usuarios', f'Estado actualizado: {user["username"]} -> {nuevo_estado}')
-                    flash(f'Estado actualizado: {user["username"]} ahora está {nuevo_estado.lower()}.')
-                return redirect(url_for('main.usuarios'))
-            if action == 'reset_password':
-                user_id = request.form.get('user_id', '').strip()
-                new_password = request.form.get('new_password', '').strip()
-                user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-                if not user:
-                    flash('No se encontró el usuario solicitado.')
-                elif len(new_password) < 4:
-                    flash('La nueva contraseña debe tener al menos 4 caracteres.')
-                else:
-                    conn.execute("UPDATE users SET password=? WHERE id=?", (new_password, user['id']))
-                    conn.commit()
-                    log_action(session.get('username', 'admin'), 'Gestión de usuarios', f'Contraseña restablecida: {user["username"]}')
-                    flash(f'Contraseña restablecida para {user["username"]}.')
-                return redirect(url_for('main.usuarios'))
-        users = conn.execute(
-            """
-            SELECT id, username, role, estado, creado_en, ultimo_acceso
-            FROM users
-            ORDER BY username
-            """
-        ).fetchall()
-    return render_template('usuarios.html', users=users)
-
-
-@bp.route('/mi-cuenta', methods=['GET', 'POST'])
-@login_required
-def mi_cuenta():
-    with connect_db() as conn:
-        user = conn.execute(
-            """
-            SELECT id, username, role, estado, creado_en, ultimo_acceso, password
-            FROM users
-            WHERE id=?
-            """,
-            (session.get('user_id'),),
-        ).fetchone()
-        if not user:
-            session.clear()
-            flash('No se encontró tu usuario. Inicia sesión nuevamente.')
-            return redirect(url_for('main.login'))
-        if request.method == 'POST':
-            current_password = request.form.get('current_password', '').strip()
-            new_password = request.form.get('new_password', '').strip()
-            confirm_password = request.form.get('confirm_password', '').strip()
-            if current_password != user['password']:
-                flash('La contraseña actual no coincide.')
-            elif len(new_password) < 4:
-                flash('La nueva contraseña debe tener al menos 4 caracteres.')
-            elif new_password != confirm_password:
-                flash('La confirmación de la nueva contraseña no coincide.')
-            else:
-                conn.execute(
-                    "UPDATE users SET password=? WHERE id=?",
-                    (new_password, user['id']),
-                )
-                conn.commit()
-                log_action(session.get('username', 'usuario'), 'Cambio de contraseña', 'Actualizó su contraseña de acceso.')
-                flash('Tu contraseña fue actualizada correctamente.')
-                return redirect(url_for('main.mi_cuenta'))
-    return render_template('mi_cuenta.html', user=user)
-
-
-@bp.route('/configuracion', methods=['GET', 'POST'])
-@admin_required
-def configuracion():
-    with connect_db() as conn:
-        if request.method == 'POST':
-            for clave in ['nombre_asociacion', 'ubicacion', 'aporte_mensual', 'saldo_actual_total_oficial', 'total_prestamo_acumulado_oficial', 'multa_inasistencia', 'multa_tardanza']:
-                conn.execute("INSERT OR REPLACE INTO configuracion(clave, valor) VALUES(?,?)", (clave, request.form.get(clave, '')))
-            conn.commit()
-            log_action(session.get('username', 'admin'), 'Configuración', 'Actualización de parámetros institucionales')
-            flash('Configuración guardada correctamente.')
-            return redirect(url_for('main.configuracion'))
-        cfg = {r['clave']: r['valor'] for r in conn.execute("SELECT clave, valor FROM configuracion").fetchall()}
-    return render_template('configuracion.html', cfg=cfg)
-
-
-@bp.route('/auditoria')
-@admin_required
-def auditoria():
-    with connect_db() as conn:
-        rows = conn.execute("SELECT * FROM auditoria ORDER BY id DESC LIMIT 200").fetchall()
-    return render_template('auditoria.html', rows=rows)
+# Registro modular progresivo: estos módulos ya salen del monolito principal
+# para mantener el blueprint único sin seguir inflando este archivo legacy.
+from .route_modules import api_routes  # noqa: E402,F401
+from .route_modules import admin_routes  # noqa: E402,F401
+from .route_modules import asistencia_routes  # noqa: E402,F401
+from .route_modules import dashboard_routes  # noqa: E402,F401
+from .route_modules import monthly_routes  # noqa: E402,F401
+from .route_modules import report_routes  # noqa: E402,F401
+from .route_modules import reuniones_routes  # noqa: E402,F401
+from .route_modules import socios_routes  # noqa: E402,F401
 

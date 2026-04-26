@@ -7,11 +7,12 @@
       <h2>Reportes consolidados</h2>
       <p class="module-subtitle">Explora saldos, res&uacute;menes mensuales y trazabilidad hist&oacute;rica en una vista m&aacute;s clara y ejecutiva.</p>
     </div>
-    <div class="module-actions">
+  <div class="module-actions">
       <a class="btn" href="{{ url_for('main.reporte_imprimible') }}" target="_blank">Abrir reporte imprimible</a>
+      <a class="btn secondary" href="{{ url_for('main.multas_asistencia') }}">Abrir multas automáticas</a>
       <a class="btn secondary" href="{{ url_for('main.saldo_actual') }}">Abrir saldo actual</a>
-    </div>
   </div>
+</div>
 
   <div class="dashboard-hero dashboard-hero-ok">
     <div class="dashboard-hero-copy">
@@ -35,6 +36,89 @@
       <div class="hero-chip">
         <span>Saldo m&aacute;ximo</span>
         <strong>S/ {{ '%.1f'|format(resumen.saldo_max or 0) }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Estad&iacute;sticas y tendencias</div>
+      <h3>Lectura comparativa del sistema</h3>
+      <p class="small-note">Resume c&oacute;mo viene evolucionando la recaudaci&oacute;n, la colocaci&oacute;n y el saldo actual entre los per&iacute;odos m&aacute;s recientes.</p>
+    </div>
+
+    <div class="dashboard-metric-grid dashboard-metric-grid-secondary trend-stat-grid">
+      {% for card in tendencia_periodos.cards %}
+      <div class="dashboard-metric-card compact trend-card trend-card-{{ card.status }}">
+        <span class="label">{{ card.label }}</span>
+        <div class="big">S/ {{ '%.1f'|format(card.current or 0) }}</div>
+        <div class="trend-delta trend-delta-{{ card.status }}">
+          {% if card.has_previous %}
+            {% if card.direction == 'up' %}&#9650;{% elif card.direction == 'down' %}&#9660;{% else %}&middot;{% endif %}
+            Variaci&oacute;n: S/ {{ '%.1f'|format(card.delta or 0) }}
+            {% if card.delta_pct is not none %}({{ '%.1f'|format(card.delta_pct or 0) }}%){% endif %}
+          {% else %}
+            Sin per&iacute;odo anterior para comparar
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      <div class="dashboard-metric-card compact trend-card trend-card-{{ tendencia_financiera.status }}">
+        <span class="label">{{ tendencia_financiera.label }}</span>
+        <div class="big">S/ {{ '%.1f'|format(tendencia_financiera.current or 0) }}</div>
+        <div class="trend-delta trend-delta-{{ tendencia_financiera.status }}">
+          {% if tendencia_financiera.has_previous %}
+            {% if tendencia_financiera.direction == 'up' %}&#9650;{% elif tendencia_financiera.direction == 'down' %}&#9660;{% else %}&middot;{% endif %}
+            Contra el corte anterior: S/ {{ '%.1f'|format(tendencia_financiera.delta or 0) }}
+            {% if tendencia_financiera.delta_pct is not none %}({{ '%.1f'|format(tendencia_financiera.delta_pct or 0) }}%){% endif %}
+          {% else %}
+            A&uacute;n no hay un corte financiero anterior para comparar
+          {% endif %}
+        </div>
+        <div class="small-note">Corte financiero {{ periodo_financiero }}</div>
+      </div>
+    </div>
+
+    <div class="dashboard-main-split">
+      <div class="card">
+        <h3>Resumen de tendencia</h3>
+        <div class="metric"><span>Per&iacute;odos analizados</span><strong>{{ tendencia_periodos.summary.periodos_analizados or 0 }}</strong></div>
+        <div class="metric"><span>Promedio reciente del fondo</span><strong>S/ {{ '%.1f'|format(tendencia_periodos.summary.promedio_fondo or 0) }}</strong></div>
+        <div class="metric"><span>Promedio de colocaci&oacute;n</span><strong>{{ '%.1f'|format(tendencia_periodos.summary.promedio_colocacion_pct or 0) }}%</strong></div>
+        <div class="metric">
+          <span>Mejor per&iacute;odo por fondo</span>
+          <strong>
+            {% if tendencia_periodos.summary.mejor_periodo_fondo %}
+              {{ tendencia_periodos.summary.mejor_periodo_fondo.periodo }} &middot; S/ {{ '%.1f'|format(tendencia_periodos.summary.mejor_periodo_fondo.total_recaudado or 0) }}
+            {% else %}
+              Sin datos
+            {% endif %}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Tendencia operativa por per&iacute;odo</h3>
+        <table>
+          <caption>Evoluci&oacute;n reciente del fondo mensual y su colocaci&oacute;n</caption>
+          <thead><tr><th>Per&iacute;odo</th><th>Total mensual</th><th>Colocado</th><th>Pendiente</th><th>Avance</th></tr></thead>
+          <tbody>
+          {% for row in tendencia_periodos.series %}
+            <tr>
+              <td>{{ row.periodo }}</td>
+              <td>
+                <div>S/ {{ '%.1f'|format(row.total_recaudado or 0) }}</div>
+                <div class="trend-bar-track"><div class="trend-bar-fill" style="width:{{ row.recaudado_bar_pct or 0 }}%"></div></div>
+              </td>
+              <td>S/ {{ '%.1f'|format(row.total_colocado or 0) }}</td>
+              <td>S/ {{ '%.1f'|format(row.saldo_por_colocar or 0) }}</td>
+              <td>{{ '%.1f'|format(row.colocacion_pct or 0) }}%</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">A&uacute;n no hay suficientes per&iacute;odos para mostrar tendencia.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -65,6 +149,33 @@
           <a class="btn secondary" href="{{ url_for('main.reporte_morosos_csv') }}">Descargar morosidad CSV</a>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="dashboard-group">
+    <div class="dashboard-group-head">
+      <div class="module-eyebrow">Proyecci&oacute;n</div>
+      <h3>Proyecci&oacute;n mensual del cronograma</h3>
+      <p class="small-note">Vista agregada del cronograma general para seguir cuotas, capital e intereses por mes.</p>
+    </div>
+
+    <div class="card">
+      <table>
+        <caption>Proyecci&oacute;n financiera mensual del cronograma</caption>
+        <thead><tr><th>Per&iacute;odo</th><th>Intereses</th><th>Capital</th><th>Cuotas proyectadas</th></tr></thead>
+        <tbody>
+        {% for row in mensual %}
+          <tr>
+            <td>{{ row.periodo }}</td>
+            <td>S/ {{ '%.2f'|format(row.intereses or 0) }}</td>
+            <td>S/ {{ '%.2f'|format(row.capital or 0) }}</td>
+            <td>S/ {{ '%.2f'|format(row.cuotas or 0) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">A&uacute;n no hay proyecciones mensuales disponibles.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -118,7 +229,6 @@
     </div>
   </div>
 
- 
   <div class="dashboard-group">
     <div class="dashboard-group-head">
       <div class="module-eyebrow">Trazabilidad</div>

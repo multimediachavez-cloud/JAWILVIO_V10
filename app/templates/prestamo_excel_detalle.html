@@ -8,7 +8,22 @@
 <div class="section card">
   <p class="small-note">Este cronograma viene directamente de la hoja individual del Excel y se conserva como referencia histórica del socio.</p>
   {% if periodo_cerrado %}
-  <p class="small-note">Los meses cerrados hasta {{ periodo_cerrado }} se muestran en verde.</p>
+  <p class="small-note">Los meses cerrados hasta {{ periodo_cerrado }} se muestran en verde dentro de este bloque.</p>
+  {% endif %}
+  {% if current_role == 'Administrador' %}
+  <p class="small-note">Desde aquí también puedes corregir el título visible, la fecha de inicio manual y la composición del préstamo sin volver a la ficha general.</p>
+  <form method="post" class="admin-manual-loan-form" style="margin-top:12px;">
+    <input type="hidden" name="action" value="actualizar_prestamo_excel">
+    <input type="hidden" name="prestamo_excel_id" value="{{ prestamo_excel.id }}">
+    <input type="text" name="titulo_visible" value="{{ prestamo_excel.titulo_manual or prestamo_excel.titulo or ('Prestamo ' ~ prestamo_excel.bloque_orden) }}" placeholder="Título visible">
+    <input type="date" name="fecha_inicio_manual" value="{{ prestamo_excel.fecha_inicio_manual or prestamo_excel.fecha_inicio or '' }}" placeholder="Fecha de inicio">
+    <input type="number" name="saldo_base_ref" step="0.1" min="0" value="{{ '%.1f'|format(prestamo_excel.saldo_base_ref) if prestamo_excel.saldo_base_ref is not none else '' }}" placeholder="Saldo base">
+    <input type="number" name="prestamo_adicional_ref" step="0.1" min="0" value="{{ '%.1f'|format(prestamo_excel.prestamo_adicional_ref) if prestamo_excel.prestamo_adicional_ref is not none else '' }}" placeholder="Préstamo adicional">
+    <button class="btn secondary" name="submit_mode" value="save">Guardar corrección</button>
+    <button class="btn {% if prestamo_excel.es_activo %}secondary{% endif %}" name="submit_mode" value="apply">
+      {% if prestamo_excel.es_activo %}Reaplicar vigente{% else %}Aplicar como vigente{% endif %}
+    </button>
+  </form>
   {% endif %}
 
   <div class="historico-sheet-header">
@@ -24,7 +39,7 @@
           <th>PLAZO</th>
           <th>FECHA</th>
           <th>PRÉSTAMO S/.</th>
-          <th>INTERES</th>
+          <th>INTERÉS</th>
           <th>ABONO DE CAPITAL</th>
           <th>CUOTA</th>
           <th>SALDO</th>
@@ -56,20 +71,45 @@
       </tbody>
     </table>
 
-    {% if prestamo_excel.saldo_base_ref is not none or prestamo_excel.prestamo_adicional_ref is not none %}
-    <div class="historico-sheet-summary">
-      <div class="historico-sheet-summary-row">
-        <span>SALDO</span>
-        <strong>S/ {{ '%.2f'|format(prestamo_excel.saldo_base_ref or 0) }}</strong>
+    {% if prestamo_excel.saldo_base_ref is not none or prestamo_excel.prestamo_adicional_ref is not none or prestamo_excel.interes_visible is not none %}
+    <div class="historico-sheet-summary-stack">
+      {% if prestamo_excel.es_activo %}
+      <div class="historico-sheet-summary">
+        <div class="historico-sheet-summary-row">
+          <span>SALDO</span>
+          <strong>S/ {{ '%.2f'|format(prestamo_excel.saldo_base_ref or 0) }}</strong>
+        </div>
+        <div class="historico-sheet-summary-row">
+          <span>PRESTAMO</span>
+          <strong>S/ {{ '%.2f'|format(prestamo_excel.prestamo_adicional_ref or 0) }}</strong>
+        </div>
+        <div class="historico-sheet-summary-row total">
+          <span>TOTAL</span>
+          <strong>S/ {{ '%.2f'|format(prestamo_excel.monto_inicial or 0) }}</strong>
+        </div>
       </div>
-      <div class="historico-sheet-summary-row">
-        <span>PRESTAMO</span>
-        <strong>S/ {{ '%.2f'|format(prestamo_excel.prestamo_adicional_ref or 0) }}</strong>
+      {% else %}
+      <div class="historico-sheet-summary">
+        <div class="historico-sheet-summary-row">
+          <span>PRESTAMO</span>
+          <strong>S/ {{ '%.2f'|format(prestamo_excel.prestamo_adicional_ref or prestamo_excel.monto_inicial or 0) }}</strong>
+        </div>
+        <div class="historico-sheet-summary-row total">
+          <span>TOTAL</span>
+          <strong>S/ {{ '%.2f'|format(prestamo_excel.monto_inicial or 0) }}</strong>
+        </div>
       </div>
-      <div class="historico-sheet-summary-row total">
-        <span>TOTAL</span>
-        <strong>S/ {{ '%.2f'|format(prestamo_excel.monto_inicial or 0) }}</strong>
+      <div class="historico-sheet-summary">
+        <div class="historico-sheet-summary-row">
+          <span>INTERES</span>
+          <strong>S/ {{ '%.1f'|format(prestamo_excel.interes_visible or 0) }}</strong>
+        </div>
+        <div class="historico-sheet-summary-row">
+          <span>SALDO</span>
+          <strong>S/ {{ '%.2f'|format(prestamo_excel.saldo_base_ref or prestamo_excel.saldo_visible or 0) }}</strong>
+        </div>
       </div>
+      {% endif %}
     </div>
     {% endif %}
   </div>

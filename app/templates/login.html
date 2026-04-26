@@ -3,19 +3,40 @@
 <div class="login-wrap">
   <div class="login-card">
     <div class="login-logo-wrap">
-      <img class="login-logo" src="{{ url_for('static', filename='img/logo_jawilvio_light.svg') }}" alt="Logo JAWILVIO">
+      <img class="login-logo" src="{{ app_logo }}" alt="Logo JAWILVIO">
     </div>
-    <p class="muted">Sistema integrado con el Excel real de la asociación.</p>
+    <div class="login-kicker">Acceso al sistema</div>
+    <h1 class="login-title">{{ app_nombre }}</h1>
+    <p class="muted">Software administrativo para cartera, préstamos, aportes, reuniones, asistencia y reportes financieros.</p>
     {% if error %}<div class="notice" style="margin-bottom:12px">{{ error }}</div>{% endif %}
+
+    {% if pending_two_factor %}
     <form method="post">
+      <input type="hidden" name="action" value="verify_2fa">
       <label>Usuario</label>
-      <input type="text" name="username" value="admin" required>
+      <input type="text" value="{{ pending_username }}" readonly>
+      <div style="height:10px"></div>
+      <label>Código de verificación</label>
+      <input type="text" name="two_factor_code" inputmode="numeric" autocomplete="one-time-code" placeholder="Escribe el código de 6 dígitos" required>
+      <div class="small-note" style="margin-top:10px">Usa tu app autenticadora para completar el ingreso con doble factor.</div>
+      <div style="height:16px"></div>
+      <button class="btn" style="width:100%" type="submit">Verificar e ingresar</button>
+    </form>
+    {% else %}
+    <form method="post">
+      <input type="hidden" name="action" value="password_step">
+      <label>Usuario</label>
+      <input type="text" name="username" required>
       <div style="height:10px"></div>
       <label>Contraseña</label>
-      <input type="password" name="password" value="admin123" required>
+      <div class="password-field">
+        <input type="password" name="password" required>
+        <button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Mostrar</button>
+      </div>
       <div style="height:16px"></div>
-      <button class="btn" style="width:100%">Ingresar</button>
+      <button class="btn" style="width:100%" type="submit">Ingresar</button>
     </form>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

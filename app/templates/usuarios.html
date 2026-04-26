@@ -4,17 +4,23 @@
   <div>
     <div class="module-eyebrow">Seguridad</div>
     <h2>Gestión de usuarios</h2>
-    <p class="module-subtitle">Administra accesos, restablece contraseñas y controla qué usuarios están activos en el sistema.</p>
+    <p class="module-subtitle">Administra accesos, restablece contraseñas, controla el estado de cada usuario y resuelve bloqueos de doble factor.</p>
   </div>
 </div>
 
 <div class="card section">
   <h3>Crear usuario</h3>
-  <p class="small-note">Registra un nuevo usuario con su rol. El usuario se crea activo y podrá cambiar su contraseña desde su cuenta.</p>
+  <p class="small-note">Registra un nuevo usuario con su rol. El usuario se crea activo y podrá cambiar su contraseña y activar 2FA desde su cuenta.</p>
   <form method="post" class="form-inline">
     <input type="hidden" name="action" value="create_user">
     <div><label>Usuario</label><input type="text" name="username" placeholder="Escribe el nombre de usuario" required></div>
-    <div><label>Contraseña inicial</label><input type="text" name="password" placeholder="Escribe la contraseña inicial" required></div>
+    <div>
+      <label>Contraseña inicial</label>
+      <div class="password-field">
+        <input type="password" name="password" placeholder="Escribe la contraseña inicial" required>
+        <button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Mostrar</button>
+      </div>
+    </div>
     <div><label>Rol</label>
       <select name="role" required>
         <option>Administrador</option>
@@ -35,9 +41,11 @@
         <th>Usuario</th>
         <th>Rol</th>
         <th>Estado</th>
+        <th>2FA</th>
         <th>Creado</th>
         <th>Último acceso</th>
         <th>Restablecer contraseña</th>
+        <th>Reset 2FA</th>
         <th>Acción</th>
       </tr>
     </thead>
@@ -47,14 +55,25 @@
         <td>{{ u.username }}</td>
         <td>{{ u.role }}</td>
         <td>{{ u.estado }}</td>
+        <td>{% if u.two_factor_enabled %}<span class="badge">Activo</span>{% else %}<span class="small-note">Inactivo</span>{% endif %}</td>
         <td>{{ u.creado_en or '-' }}</td>
         <td>{{ u.ultimo_acceso or 'Sin ingreso todavía' }}</td>
         <td>
           <form method="post" class="search" style="margin-bottom:0;align-items:center">
             <input type="hidden" name="action" value="reset_password">
             <input type="hidden" name="user_id" value="{{ u.id }}">
-            <input type="text" name="new_password" placeholder="Nueva contraseña" required>
+            <div class="password-field">
+              <input type="password" name="new_password" placeholder="Nueva contraseña" required>
+              <button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Mostrar</button>
+            </div>
             <button class="btn secondary" type="submit">Restablecer</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" style="margin-bottom:0">
+            <input type="hidden" name="action" value="reset_2fa">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <button class="btn secondary" type="submit">Desactivar 2FA</button>
           </form>
         </td>
         <td>

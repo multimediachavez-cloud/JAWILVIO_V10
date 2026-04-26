@@ -1,0 +1,232 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="module-header">
+  <div>
+    <div class="module-eyebrow">Control y reportes</div>
+    <h2>Multas automáticas por asistencia</h2>
+    <p class="module-subtitle">Revisa las multas del período, cobra los importes pendientes y, si hace falta, corrige o elimina manualmente el resumen por socio y el evento sancionable que originó la multa.</p>
+  </div>
+  <div class="module-actions">
+    <a class="btn" href="{{ url_for('main.asistencia') }}">Abrir asistencia</a>
+    <a class="btn secondary" href="{{ url_for('main.reportes') }}">Abrir reportes</a>
+  </div>
+</div>
+
+<div class="card section">
+  <form method="get" class="search">
+    <span class="small-note">Selecciona el período que quieres revisar. La multa se recalcula automáticamente usando el último registro de asistencia guardado por socio y fecha.</span>
+    <select name="periodo" class="full-select" style="flex:1">
+      {% for p in periodos %}
+        <option value="{{ p.periodo }}" {% if p.periodo == periodo %}selected{% endif %}>{{ p.periodo }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn">Actualizar período</button>
+  </form>
+</div>
+
+<div class="grid section">
+  <div class="card">
+    <h3>Período</h3>
+    <div class="big">{{ periodo }}</div>
+    <div class="small-note" style="margin-top:6px">{{ resumen.periodo_label }}</div>
+  </div>
+  <div class="card">
+    <h3>Multa por inasistencia</h3>
+    <div class="big">S/ {{ '%.1f'|format(multa_inasistencia or 0) }}</div>
+  </div>
+  <div class="card">
+    <h3>Multa por tardanza</h3>
+    <div class="big">S/ {{ '%.1f'|format(multa_tardanza or 0) }}</div>
+  </div>
+  <div class="card">
+    <h3>Socios multados</h3>
+    <div class="big">{{ resumen.socios_multados }}</div>
+  </div>
+  <div class="card">
+    <h3>Total del período</h3>
+    <div class="big">S/ {{ '%.1f'|format(resumen.total_multas or 0) }}</div>
+  </div>
+  <div class="card">
+    <h3>Pendiente por cobrar</h3>
+    <div class="big">S/ {{ '%.1f'|format(resumen.total_pendientes or 0) }}</div>
+  </div>
+  <div class="card">
+    <h3>Total cobrado</h3>
+    <div class="big">S/ {{ '%.1f'|format(resumen.total_cobradas or 0) }}</div>
+  </div>
+  <div class="card">
+    <h3>Eventos sancionados</h3>
+    <div class="big">{{ resumen.eventos_sancionados }}</div>
+    <div class="small-note" style="margin-top:6px">Inasistencias: {{ resumen.total_inasistencias }} · Tardanzas: {{ resumen.total_tardanzas }}</div>
+  </div>
+</div>
+
+<div class="card section {% if (resumen.total_pendientes or 0) > 0 %}compare-summary summary-warn{% else %}compare-summary summary-ok{% endif %}">
+  {% if (resumen.total_multas or 0) > 0 %}
+    <strong>Lectura del período:</strong> se detectaron {{ resumen.socios_multados }} socios con multa automática. El total del período es S/ {{ '%.1f'|format(resumen.total_multas or 0) }} y quedan S/ {{ '%.1f'|format(resumen.total_pendientes or 0) }} pendientes por cobrar.
+  {% else %}
+    <strong>Lectura del período:</strong> no se detectaron multas automáticas en este período.
+  {% endif %}
+</div>
+
+{% if current_role != 'Administrador' and puede_editar %}
+<div class="card section">
+  <div class="small-note">Tu rol puede cobrar o reabrir multas, pero la edición y eliminación manual del resumen y de los eventos origen queda reservada al administrador.</div>
+</div>
+{% elif not puede_editar %}
+<div class="card section">
+  <div class="small-note">Tu rol puede revisar este módulo, pero no actualizar el cobro de multas.</div>
+</div>
+{% endif %}
+
+{% if current_role == 'Administrador' %}
+<div class="card section">
+  <div class="small-note">Como administrador puedes corregir inasistencias o tardanzas, ajustar observaciones y eliminar una multa o su evento origen cuando sea necesario.</div>
+</div>
+{% endif %}
+
+<div class="card section">
+  <h3>Resumen por socio</h3>
+  <table>
+    <caption>Multas automáticas generadas en el período</caption>
+    <thead>
+      <tr>
+        <th>N°</th>
+        <th>Socio</th>
+        <th>Inasistencias</th>
+        <th>Tardanzas</th>
+        <th>Total multa</th>
+        <th>Estado de cobro</th>
+        <th>Fecha de cobro</th>
+        <th>Gestión</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in multas_rows %}
+      <tr>
+        <td>{{ row.socio_numero }}</td>
+        <td>{{ row.socio_nombre }}</td>
+        <td>{{ row.inasistencias }}</td>
+        <td>{{ row.tardanzas }}</td>
+        <td>S/ {{ '%.1f'|format(row.total_multa or 0) }}</td>
+        <td>
+          <span class="multa-state-chip {% if row.estado_cobro == 'Cobrada' %}paid{% else %}pending{% endif %}">
+            {{ row.estado_cobro }}
+          </span>
+        </td>
+        <td>{{ row.fecha_cobro or '-' }}</td>
+        <td>
+          <div class="multa-action-stack">
+            {% if puede_editar %}
+              {% if row.estado_cobro == 'Cobrada' %}
+              <form method="post" class="multa-inline-form">
+                <input type="hidden" name="action" value="reabrir_cobro">
+                <input type="hidden" name="multa_id" value="{{ row.id }}">
+                <button class="btn secondary">Reabrir cobro</button>
+              </form>
+              {% else %}
+              <form method="post" class="multa-inline-form">
+                <input type="hidden" name="action" value="marcar_cobrada">
+                <input type="hidden" name="multa_id" value="{{ row.id }}">
+                <input type="text" name="observacion_cobro" placeholder="Observación opcional">
+                <button class="btn">Marcar cobrada</button>
+              </form>
+              {% endif %}
+            {% endif %}
+
+            {% if current_role == 'Administrador' %}
+            <form method="post" class="multa-edit-grid">
+              <input type="hidden" name="action" value="editar_multa">
+              <input type="hidden" name="multa_id" value="{{ row.id }}">
+              <label>
+                <span class="small-note">Inasistencias</span>
+                <input type="number" name="inasistencias" min="0" value="{{ row.inasistencias }}">
+              </label>
+              <label>
+                <span class="small-note">Tardanzas</span>
+                <input type="number" name="tardanzas" min="0" value="{{ row.tardanzas }}">
+              </label>
+              <label class="multa-edit-note">
+                <span class="small-note">Observación manual</span>
+                <input type="text" name="observacion_manual" value="{{ row.observacion or '' }}" placeholder="Ajuste administrativo">
+              </label>
+              <div class="row-actions">
+                <button class="btn light">Guardar ajuste</button>
+              </div>
+            </form>
+            <form method="post" class="inline-form" onsubmit="return confirm('¿Eliminar esta multa del período?');">
+              <input type="hidden" name="action" value="eliminar_multa">
+              <input type="hidden" name="multa_id" value="{{ row.id }}">
+              <button class="btn btn-danger btn-inline" type="submit">Eliminar multa</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8">No hay multas automáticas registradas para este período.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card section">
+  <h3>Detalle de eventos que generaron multa</h3>
+  <table>
+    <caption>Último estado sancionable guardado por socio y fecha</caption>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Socio</th>
+        <th>Estado</th>
+        <th>Monto aplicado</th>
+        <th>Observación</th>
+        <th>Gestión</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in detalle_rows %}
+      <tr>
+        <td>{{ row.fecha }}</td>
+        <td>{{ row.socio_numero }} - {{ row.socio_nombre }}</td>
+        <td>
+          <span class="multa-causa-chip {% if row.estado == 'Faltó' %}fault{% else %}late{% endif %}">
+            {{ row.estado }}
+          </span>
+        </td>
+        <td>S/ {{ '%.1f'|format(row.monto_multa or 0) }}</td>
+        <td>{{ row.observacion or '-' }}</td>
+        <td>
+          {% if current_role == 'Administrador' %}
+          <form method="post" action="{{ url_for('main.multas_asistencia_editar_evento', evento_id=row.id) }}" class="multa-edit-grid">
+            <input type="hidden" name="periodo" value="{{ periodo }}">
+            <label>
+              <span class="small-note">Estado corregido</span>
+              <select name="estado_evento" class="full-select">
+                <option value="Asistió" {% if row.estado == 'Asistió' %}selected{% endif %}>Asistió</option>
+                <option value="Faltó" {% if row.estado == 'Faltó' %}selected{% endif %}>Faltó</option>
+                <option value="Tardanza" {% if row.estado == 'Tardanza' %}selected{% endif %}>Tardanza</option>
+                <option value="Permiso" {% if row.estado == 'Permiso' %}selected{% endif %}>Permiso</option>
+              </select>
+            </label>
+            <label class="multa-edit-note">
+              <span class="small-note">Observación</span>
+              <input type="text" name="observacion_evento" value="{{ row.observacion or '' }}" placeholder="Corrección administrativa del evento">
+            </label>
+            <div class="row-actions">
+              <button class="btn light">Guardar evento</button>
+              <button class="btn btn-danger" type="submit" formaction="{{ url_for('main.multas_asistencia_eliminar_evento', evento_id=row.id) }}" onclick="return confirm('¿Eliminar este evento sancionable?');">Eliminar evento</button>
+            </div>
+          </form>
+          {% else %}
+          <span class="small-note">Solo el administrador puede corregir o eliminar el evento origen.</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6">No se detectaron inasistencias ni tardanzas con multa en este período.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

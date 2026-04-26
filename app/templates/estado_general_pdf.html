@@ -1,58 +1,100 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<title>Estado general imprimible</title>
-<style>
-body{font-family:Arial,sans-serif;margin:28px;color:#17263c}
-h1,h2,h3,p{margin:0}
-.header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:2px solid #dbe4f0}
-.brand{display:flex;gap:14px;align-items:flex-start}
-.brand-logo{width:220px;max-width:100%;height:auto;display:block}
-.brand-copy h1{font-size:22px;line-height:1.15;margin-bottom:6px}
-.brand-copy .subtitle{font-size:14px;color:#58708c;margin-bottom:4px}
-.brand-copy .location{font-size:13px;color:#6a8099}
-.header-meta{text-align:right;min-width:220px}
-.header-meta .doc-title{font-size:18px;font-weight:700;margin-bottom:8px}
-.header-meta .meta-line{font-size:13px;color:#58708c;line-height:1.5}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:20px 0}
-.box{border:1px solid #dbe3ef;border-radius:10px;padding:14px}
-.box-title{font-size:13px;color:#607089}
-.value{font-size:28px;font-weight:bold;margin-top:6px}
-.note{margin-top:16px;padding:12px 14px;border:1px solid #dbe4f0;border-radius:10px;background:#f8fbff;color:#42566d}
-@media print{body{margin:16px}}
-</style>
+  <meta charset="utf-8">
+  <title>Estado general imprimible</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/print_a4.css') }}">
 </head>
-<body>
-  <div class="header">
-    <div class="brand">
-      <img class="brand-logo" src="{{ url_for('static', filename='img/logo_jawilvio_light.svg') }}" alt="Logo JAWILVIO">
-      <div class="brand-copy">
-        <h1>{{ app_nombre }}</h1>
-        <div class="subtitle">Resumen ejecutivo del estado general de la asociación</div>
-        <div class="location">{{ app_ubicacion }}</div>
+<body class="print-report">
+  <main class="print-page">
+    <header class="print-header">
+      <div class="print-brand">
+        <img class="print-brand-logo" src="{{ app_logo }}" alt="Logo institucional">
+        <div class="print-brand-copy">
+          <h1>{{ app_nombre }}</h1>
+          <div class="subtitle">Resumen ejecutivo del estado general de la asociación.</div>
+          <div class="location">{{ app_ubicacion }}</div>
+        </div>
       </div>
-    </div>
-    <div class="header-meta">
-      <div class="doc-title">Estado general imprimible</div>
-      <div class="meta-line"><strong>Emitido:</strong> {{ fecha }}</div>
-      <div class="meta-line"><strong>Documento:</strong> Estado general</div>
-    </div>
-  </div>
+      <div class="print-meta">
+        <div class="print-doc-title">Estado general imprimible</div>
+        <div class="print-meta-line"><strong>Período:</strong> {{ periodo_label }}</div>
+        <div class="print-meta-line"><strong>Período operativo:</strong> {{ periodo_actual }}</div>
+        <div class="print-meta-line"><strong>Emitido:</strong> {{ fecha }}</div>
+      </div>
+    </header>
 
-  <div class="grid">
-    <div class="box"><div class="box-title">Socios</div><div class="value">{{ total_socios }}</div></div>
-    <div class="box"><div class="box-title">Préstamos activos</div><div class="value">{{ total_prestamos }}</div></div>
-    <div class="box"><div class="box-title">Morosidad registrada</div><div class="value">{{ morosos }}</div></div>
-    <div class="box"><div class="box-title">Saldo total pendiente</div><div class="value">S/ {{ '%.2f'|format(saldo or 0) }}</div></div>
-    <div class="box"><div class="box-title">Capital recuperado</div><div class="value">S/ {{ '%.2f'|format(capital or 0) }}</div></div>
-    <div class="box"><div class="box-title">Intereses proyectados</div><div class="value">S/ {{ '%.2f'|format(intereses or 0) }}</div></div>
-    <div class="box"><div class="box-title">Cuotas proyectadas</div><div class="value">S/ {{ '%.2f'|format(cuotas or 0) }}</div></div>
-  </div>
+    <section class="print-section">
+      <h2 class="print-section-title">Indicadores institucionales</h2>
+      <div class="print-summary-grid">
+        <div class="print-card">
+          <div class="print-card-title">Socios</div>
+          <div class="print-card-value">{{ total_socios }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Préstamos activos</div>
+          <div class="print-card-value">{{ total_prestamos }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Morosidad registrada</div>
+          <div class="print-card-value">{{ morosos }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Promedio de saldo por socio</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(promedio_saldo or 0) }}</div>
+        </div>
+      </div>
+    </section>
 
-  <div class="note">
-    Este reporte está preparado para imprimirse desde el navegador o guardarse como PDF usando la opción <strong>Imprimir -> Guardar como PDF</strong>.
-  </div>
+    <section class="print-section">
+      <h2 class="print-section-title">Totales financieros</h2>
+      <div class="print-summary-grid">
+        <div class="print-card">
+          <div class="print-card-title">Saldo total pendiente</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(saldo or 0) }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Capital recuperado</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(capital or 0) }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Intereses proyectados</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(intereses or 0) }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Cuotas proyectadas</div>
+          <div class="print-card-value small">S/ {{ '%.2f'|format(cuotas or 0) }}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="print-section">
+      <h2 class="print-section-title">Cierre resumido</h2>
+      <div class="print-band">
+        <div class="print-band-item">
+          <strong>Corte financiero</strong>
+          {{ periodo_label }}
+        </div>
+        <div class="print-band-item">
+          <strong>Período operativo</strong>
+          {{ periodo_actual }}
+        </div>
+        <div class="print-band-item">
+          <strong>Total financiero integrado</strong>
+          <span class="print-emphasis">S/ {{ '%.2f'|format(total_financiero or 0) }}</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="print-note">
+      Este documento resume la situación general de la asociación para impresión en formato A4 y uso institucional.
+    </div>
+
+    <footer class="print-footer">
+      <div>Documento generado desde el reporte general del sistema.</div>
+      <div>Período de referencia: {{ periodo_label }}</div>
+    </footer>
+  </main>
   <script>window.print()</script>
 </body>
 </html>

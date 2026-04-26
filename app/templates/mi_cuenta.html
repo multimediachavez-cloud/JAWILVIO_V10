@@ -4,7 +4,7 @@
   <div>
     <div class="module-eyebrow">Perfil</div>
     <h2>Mi cuenta</h2>
-    <p class="module-subtitle">Consulta el estado de tu usuario y actualiza tu contraseña de acceso cuando lo necesites.</p>
+    <p class="module-subtitle">Consulta el estado de tu usuario, cambia tu contraseña y administra la autenticación en dos pasos.</p>
   </div>
 </div>
 
@@ -16,24 +16,79 @@
     <div class="metric"><span>Estado</span><strong>{{ user.estado }}</strong></div>
     <div class="metric"><span>Creado</span><strong>{{ user.creado_en or '-' }}</strong></div>
     <div class="metric"><span>Último acceso</span><strong>{{ user.ultimo_acceso or 'Sin registro' }}</strong></div>
+    <div class="metric"><span>Doble factor</span><strong>{% if user.two_factor_enabled %}Activo{% else %}Inactivo{% endif %}</strong></div>
   </div>
+
   <div class="card">
     <h3>Cambiar contraseña</h3>
     <form method="post">
+      <input type="hidden" name="action" value="change_password">
       <div style="margin-bottom:12px">
         <label>Contraseña actual</label>
-        <input type="password" name="current_password" placeholder="Escribe tu contraseña actual" required>
+        <div class="password-field">
+          <input type="password" name="current_password" placeholder="Escribe tu contraseña actual" required>
+          <button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Mostrar</button>
+        </div>
       </div>
       <div style="margin-bottom:12px">
         <label>Nueva contraseña</label>
-        <input type="password" name="new_password" placeholder="Escribe la nueva contraseña" required>
+        <div class="password-field">
+          <input type="password" name="new_password" placeholder="Escribe la nueva contraseña" required>
+          <button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Mostrar</button>
+        </div>
       </div>
       <div style="margin-bottom:12px">
         <label>Confirmar nueva contraseña</label>
-        <input type="password" name="confirm_password" placeholder="Repite la nueva contraseña" required>
+        <div class="password-field">
+          <input type="password" name="confirm_password" placeholder="Repite la nueva contraseña" required>
+          <button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Mostrar</button>
+        </div>
       </div>
       <button class="btn" type="submit">Actualizar contraseña</button>
     </form>
+  </div>
+</div>
+
+<div class="grid section">
+  <div class="card">
+    <h3>Autenticación en dos pasos</h3>
+    {% if user.two_factor_enabled %}
+    <div class="notice" style="margin-bottom:14px">La verificación en dos pasos está activa para tu cuenta.</div>
+    <div class="small-note" style="margin-bottom:14px">En cada inicio de sesión se te pedirá un código temporal de 6 dígitos desde tu app autenticadora.</div>
+    <form method="post">
+      <input type="hidden" name="action" value="disable_2fa">
+      <div style="margin-bottom:12px">
+        <label>Contraseña actual</label>
+        <div class="password-field">
+          <input type="password" name="disable_current_password" placeholder="Confirma tu contraseña para desactivar 2FA" required>
+          <button class="password-toggle" type="button" data-password-toggle aria-pressed="false">Mostrar</button>
+        </div>
+      </div>
+      <button class="btn warning" type="submit">Desactivar autenticación en dos pasos</button>
+    </form>
+    {% else %}
+    <div class="small-note" style="margin-bottom:14px">Activa el doble factor para pedir un código temporal extra además de tu contraseña.</div>
+    {% if not pending_setup_secret %}
+    <form method="post">
+      <input type="hidden" name="action" value="prepare_2fa">
+      <button class="btn secondary" type="submit">Generar clave de autenticación</button>
+    </form>
+    {% else %}
+    <div class="card" style="background:#f8fbff;border-style:dashed">
+      <div class="metric"><span>Clave secreta</span><strong>{{ pending_setup_secret }}</strong></div>
+      <div class="small-note" style="margin-top:10px">Registra esta clave en Google Authenticator, Microsoft Authenticator, Authy o una app compatible con TOTP.</div>
+      <div class="small-note" style="margin-top:8px"><strong>URI de configuración:</strong> {{ provisioning_uri }}</div>
+    </div>
+    <form method="post" style="margin-top:14px">
+      <input type="hidden" name="action" value="enable_2fa">
+      <div style="margin-bottom:12px">
+        <label>Código de verificación</label>
+        <input type="text" name="verification_code" inputmode="numeric" placeholder="Escribe el código de 6 dígitos para confirmar" required>
+      </div>
+      <button class="btn" type="submit">Activar autenticación en dos pasos</button>
+    </form>
+    {% endif %}
+    {% endif %}
   </div>
 </div>
 {% endblock %}

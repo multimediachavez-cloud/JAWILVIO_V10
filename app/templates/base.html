@@ -9,78 +9,160 @@
 </head>
 <body>
 {% if session.get('user_id') %}
+<div class="sidebar-overlay" data-sidebar-overlay></div>
 <div class="layout">
-  <aside class="sidebar">
-    <div class="sidebar-brand">
-      <img class="sidebar-logo" src="{{ url_for('static', filename='img/logo_jawilvio_dark.svg') }}" alt="Logo JAWILVIO">
-    </div>
-    <small>Versión 10 · integral, roles, auditoría y control financiero</small>
-    <div class="muted" style="margin-top:6px">{{ app_ubicacion }}</div>
-    <nav class="nav" style="margin-top:20px">
-      <div class="nav-section-title">Inicio</div>
-      {% if can_access('main.dashboard') %}<a class="{% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">Panel de control</a>{% endif %}
+  <aside class="sidebar" data-sidebar>
+    <div class="sidebar-panel">
+      <div class="sidebar-brand">
+        <img class="sidebar-logo" src="{{ app_logo }}" alt="Logo JAWILVIO">
+        <div class="sidebar-brand-copy">
+          <strong>{{ app_nombre }}</strong>
+          <span>Plataforma administrativa y financiera</span>
+        </div>
+      </div>
+      <div class="sidebar-meta">
+        <span class="sidebar-tag">Versión 10</span>
+        <small>Integral, roles, auditoría y control financiero</small>
+        <div class="sidebar-location">{{ app_ubicacion }}</div>
+      </div>
+      <nav class="nav" style="margin-top:20px">
+        <div class="nav-module">
+          <div class="nav-section-title">Módulos principales</div>
+          {% if can_access('main.dashboard') %}<a class="{% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}"><span class="nav-icon">⌂</span><span>Dashboard</span></a>{% endif %}
+          {% if can_access('main.socios') %}<a class="{% if request.endpoint == 'main.socios' %}active{% endif %}" href="{{ url_for('main.socios') }}"><span class="nav-icon">◉</span><span>Socios</span></a>{% endif %}
+          {% if can_access('main.prestamos') %}<a class="{% if request.endpoint == 'main.prestamos' %}active{% endif %}" href="{{ url_for('main.prestamos') }}"><span class="nav-icon">¤</span><span>Préstamos</span></a>{% endif %}
+          {% if can_access('main.aportaciones_mensuales') %}<a class="{% if request.endpoint == 'main.aportaciones_mensuales' %}active{% endif %}" href="{{ url_for('main.aportaciones_mensuales') }}"><span class="nav-icon">+</span><span>Aportes</span></a>{% endif %}
+          {% if can_access('main.reuniones') %}<a class="{% if request.endpoint == 'main.reuniones' %}active{% endif %}" href="{{ url_for('main.reuniones') }}"><span class="nav-icon">R</span><span>Reuniones</span></a>{% endif %}
+          {% if can_access('main.reuniones') %}<a class="{% if request.endpoint == 'main.reuniones' %}active{% endif %}" href="{{ url_for('main.reuniones') }}"><span class="nav-icon">P</span><span>Permisos</span></a>{% endif %}
+          {% if can_access('main.reportes') %}<a class="{% if request.endpoint == 'main.reportes' %}active{% endif %}" href="{{ url_for('main.reportes') }}"><span class="nav-icon">≣</span><span>Reportes</span></a>{% endif %}
+          {% if can_access('main.fondo_total') %}<a class="{% if request.endpoint == 'main.fondo_total' %}active{% endif %}" href="{{ url_for('main.fondo_total') }}"><span class="nav-icon">S/</span><span>Caja</span></a>{% endif %}
+          {% if can_access('main.configuracion') %}<a class="{% if request.endpoint == 'main.configuracion' %}active{% endif %}" href="{{ url_for('main.configuracion') }}"><span class="nav-icon">⚙</span><span>Configuración</span></a>{% endif %}
+        </div>
 
-      <div class="nav-section-title">Cartera</div>
-      {% if can_access('main.socios') %}<a class="{% if request.endpoint == 'main.socios' %}active{% endif %}" href="{{ url_for('main.socios') }}">Socios</a>{% endif %}
-      {% if can_access('main.prestamos') %}<a class="{% if request.endpoint == 'main.prestamos' %}active{% endif %}" href="{{ url_for('main.prestamos') }}">Préstamos</a>{% endif %}
-      {% if can_access('main.estado_cuenta') %}<a class="{% if request.endpoint in ['main.estado_cuenta','main.socio_detalle','main.historial_prestamo_detalle','main.historial_prestamo_comparar'] %}active{% endif %}" href="{{ url_for('main.estado_cuenta') }}">Estado de cuenta</a>{% endif %}
+        <div class="nav-module">
+          <div class="nav-section-title">Operación financiera</div>
+          {% if can_access('main.estado_cuenta') %}<a class="{% if request.endpoint in ['main.estado_cuenta','main.socio_detalle','main.historial_prestamo_detalle','main.historial_prestamo_comparar'] %}active{% endif %}" href="{{ url_for('main.estado_cuenta') }}"><span class="nav-icon">EC</span><span>Estado de cuenta</span></a>{% endif %}
+          {% if can_access('main.cierre_mensual') %}<a class="{% if request.endpoint == 'main.cierre_mensual' %}active{% endif %}" href="{{ url_for('main.cierre_mensual') }}"><span class="nav-icon">CM</span><span>Cierre mensual</span></a>{% endif %}
+          {% if can_access('main.nuevos_prestamos') %}<a class="{% if request.endpoint == 'main.nuevos_prestamos' %}active{% endif %}" href="{{ url_for('main.nuevos_prestamos') }}"><span class="nav-icon">NP</span><span>Nuevos préstamos</span></a>{% endif %}
+          {% if can_access('main.saldo_actual') %}<a class="{% if request.endpoint in ['main.saldo_actual','main.saldos_marzo_2026','main.vincular_saldo_actual','main.vincular_saldos_marzo_2026'] %}active{% endif %}" href="{{ url_for('main.saldo_actual') }}"><span class="nav-icon">SA</span><span>Saldo actual</span></a>{% endif %}
+          {% if can_access('main.asistencia') %}<a class="{% if request.endpoint == 'main.asistencia' %}active{% endif %}" href="{{ url_for('main.asistencia') }}"><span class="nav-icon">A</span><span>Asistencia</span></a>{% endif %}
+        </div>
 
-      <div class="nav-section-title">Ciclo mensual</div>
-      {% if can_access('main.aportaciones_mensuales') %}<a class="{% if request.endpoint == 'main.aportaciones_mensuales' %}active{% endif %}" href="{{ url_for('main.aportaciones_mensuales') }}">Aportaciones mensuales</a>{% endif %}
-      {% if can_access('main.cierre_mensual') %}<a class="{% if request.endpoint == 'main.cierre_mensual' %}active{% endif %}" href="{{ url_for('main.cierre_mensual') }}">Cierre mensual</a>{% endif %}
-      {% if can_access('main.nuevos_prestamos') %}<a class="{% if request.endpoint == 'main.nuevos_prestamos' %}active{% endif %}" href="{{ url_for('main.nuevos_prestamos') }}">Nuevos préstamos</a>{% endif %}
+        <div class="nav-module">
+          <div class="nav-section-title">Herramientas y control</div>
+          {% if can_access('main.multas_asistencia') %}<a class="{% if request.endpoint == 'main.multas_asistencia' %}active{% endif %}" href="{{ url_for('main.multas_asistencia') }}"><span class="nav-icon">M</span><span>Multas automáticas</span></a>{% endif %}
+          {% if can_access('main.graficos') %}<a class="{% if request.endpoint == 'main.graficos' %}active{% endif %}" href="{{ url_for('main.graficos') }}"><span class="nav-icon">G</span><span>Gráficos</span></a>{% endif %}
+          {% if can_access('main.reporte_mensual_csv') %}<a class="{% if request.endpoint == 'main.reporte_mensual_csv' %}active{% endif %}" href="{{ url_for('main.reporte_mensual_csv') }}"><span class="nav-icon">CSV</span><span>Resumen mensual CSV</span></a>{% endif %}
+          {% if can_access('main.pdf_estado_general') %}<a class="{% if request.endpoint == 'main.pdf_estado_general' %}active{% endif %}" href="{{ url_for('main.pdf_estado_general') }}"><span class="nav-icon">EG</span><span>Estado general imprimible</span></a>{% endif %}
+          {% if can_access('main.reporte_imprimible') %}<a class="{% if request.endpoint == 'main.reporte_imprimible' %}active{% endif %}" href="{{ url_for('main.reporte_imprimible') }}"><span class="nav-icon">RG</span><span>Reporte general imprimible</span></a>{% endif %}
+          {% if can_access('main.reporte_morosos_csv') %}<a class="{% if request.endpoint == 'main.reporte_morosos_csv' %}active{% endif %}" href="{{ url_for('main.reporte_morosos_csv') }}"><span class="nav-icon">MC</span><span>Morosidad CSV</span></a>{% endif %}
+        </div>
 
-      <div class="nav-section-title">Control y reportes</div>
-      {% if can_access('main.reuniones') %}<a class="{% if request.endpoint == 'main.reuniones' %}active{% endif %}" href="{{ url_for('main.reuniones') }}">Reuniones y permisos</a>{% endif %}
-      {% if can_access('main.reportes') %}<a class="{% if request.endpoint == 'main.reportes' %}active{% endif %}" href="{{ url_for('main.reportes') }}">Reportes</a>{% endif %}
-      {% if can_access('main.saldo_actual') %}<a class="{% if request.endpoint in ['main.saldo_actual','main.saldos_marzo_2026','main.vincular_saldo_actual','main.vincular_saldos_marzo_2026'] %}active{% endif %}" href="{{ url_for('main.saldo_actual') }}">Saldo actual</a>{% endif %}
-      {% if can_access('main.fondo_total') %}<a class="{% if request.endpoint == 'main.fondo_total' %}active{% endif %}" href="{{ url_for('main.fondo_total') }}">Fondo total de la asociación</a>{% endif %}
-      {% if can_access('main.reporte_mensual_csv') %}<a class="{% if request.endpoint == 'main.reporte_mensual_csv' %}active{% endif %}" href="{{ url_for('main.reporte_mensual_csv') }}">Resumen mensual CSV</a>{% endif %}
-      {% if can_access('main.graficos') %}<a class="{% if request.endpoint == 'main.graficos' %}active{% endif %}" href="{{ url_for('main.graficos') }}">Gráficos</a>{% endif %}
-      {% if can_access('main.asistencia') %}<a class="{% if request.endpoint == 'main.asistencia' %}active{% endif %}" href="{{ url_for('main.asistencia') }}">Asistencia</a>{% endif %}
-      {% if can_access('main.pdf_estado_general') %}<a class="{% if request.endpoint == 'main.pdf_estado_general' %}active{% endif %}" href="{{ url_for('main.pdf_estado_general') }}">Estado general imprimible</a>{% endif %}
-      {% if can_access('main.reporte_imprimible') %}<a class="{% if request.endpoint == 'main.reporte_imprimible' %}active{% endif %}" href="{{ url_for('main.reporte_imprimible') }}">Reporte general imprimible</a>{% endif %}
-      {% if can_access('main.reporte_morosos_csv') %}<a class="{% if request.endpoint == 'main.reporte_morosos_csv' %}active{% endif %}" href="{{ url_for('main.reporte_morosos_csv') }}">Morosidad CSV</a>{% endif %}
-
-      {% if can_access('main.usuarios') %}
-      <div class="nav-section-title">Administración</div>
-      <a class="{% if request.endpoint == 'main.usuarios' %}active{% endif %}" href="{{ url_for('main.usuarios') }}">Usuarios</a>
-      <a class="{% if request.endpoint == 'main.configuracion' %}active{% endif %}" href="{{ url_for('main.configuracion') }}">Configuración</a>
-      <a class="{% if request.endpoint == 'main.auditoria' %}active{% endif %}" href="{{ url_for('main.auditoria') }}">Auditoría</a>
-      {% endif %}
-
-      <div class="nav-section-title">Sistema</div>
-      {% if can_access('main.backup') %}<a class="{% if request.endpoint == 'main.backup' %}active{% endif %}" href="{{ url_for('main.backup') }}">Descargar respaldo</a>{% endif %}
-      {% if can_access('main.restaurar_respaldo') %}<a class="{% if request.endpoint == 'main.restaurar_respaldo' %}active{% endif %}" href="{{ url_for('main.restaurar_respaldo') }}">Restaurar respaldo</a>{% endif %}
-      <a href="{{ url_for('main.logout') }}">Cerrar sesión</a>
-    </nav>
-  </aside>
-  <main class="content">
-    <div class="topbar">
-      <div><strong>Usuario:</strong> {{ session.get('username') }} - {{ session.get('role') }}<br><span class="badge">Versión 10</span></div>
-      <div class="muted" style="text-align:right">
-        <div><a href="{{ url_for('main.mi_cuenta') }}">Mi cuenta</a></div>
-        <div>Excel importado: {{ excel_importado }}</div>
-        {% if excel_sync_at %}
-        <div>Última sincronización automática del Excel: {{ excel_sync_at }}</div>
+        {% if can_access('main.usuarios') %}
+        <div class="nav-module">
+          <div class="nav-section-title">Administración</div>
+          <a class="{% if request.endpoint == 'main.usuarios' %}active{% endif %}" href="{{ url_for('main.usuarios') }}"><span class="nav-icon">U</span><span>Usuarios</span></a>
+          <a class="{% if request.endpoint == 'main.auditoria' %}active{% endif %}" href="{{ url_for('main.auditoria') }}"><span class="nav-icon">AU</span><span>Auditoría</span></a>
+          <a class="{% if request.endpoint == 'main.logs_sistema' %}active{% endif %}" href="{{ url_for('main.logs_sistema') }}"><span class="nav-icon">LG</span><span>Logs del sistema</span></a>
+        </div>
         {% endif %}
+
+        <div class="nav-module">
+          <div class="nav-section-title">Sistema</div>
+          {% if can_access('main.backup') %}<a class="{% if request.endpoint == 'main.backup' %}active{% endif %}" href="{{ url_for('main.backup') }}"><span class="nav-icon">DB</span><span>Descargar respaldo</span></a>{% endif %}
+          {% if can_access('main.restaurar_respaldo') %}<a class="{% if request.endpoint == 'main.restaurar_respaldo' %}active{% endif %}" href="{{ url_for('main.restaurar_respaldo') }}"><span class="nav-icon">RS</span><span>Restaurar respaldo</span></a>{% endif %}
+          <a href="{{ url_for('main.logout') }}"><span class="nav-icon">×</span><span>Cerrar sesión</span></a>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-user">{{ session.get('username') }}</div>
+        <div class="sidebar-footer-role">{{ session.get('role') }}</div>
       </div>
     </div>
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="flash-stack" role="status" aria-live="polite">
-          {% for m in messages %}
-            <div class="flash-message">{{ m }}</div>
-          {% endfor %}
+  </aside>
+  <main class="content">
+    <div class="content-shell">
+      <div class="topbar">
+        <div class="topbar-left">
+          <button class="sidebar-toggle" type="button" data-sidebar-toggle aria-label="Abrir menú">☰</button>
+          <div class="topbar-system">
+            <div class="topbar-kicker">Sistema</div>
+            <div class="topbar-system-name">{{ app_nombre }}</div>
+          </div>
         </div>
-      {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
+        <div class="topbar-primary">
+          <div class="topbar-kicker">Sesión activa</div>
+          <div class="topbar-userline">
+            <strong>{{ session.get('username') }}</strong>
+            <span>{{ session.get('role') }}</span>
+          </div>
+          <div class="topbar-badges">
+            <span class="badge">Versión 10</span>
+            <span class="badge badge-soft">Panel administrativo</span>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <div class="topbar-actions">
+            <a class="topbar-link" href="{{ url_for('main.mi_cuenta') }}">Mi cuenta</a>
+            <a class="btn secondary topbar-logout" href="{{ url_for('main.logout') }}">Cerrar sesión</a>
+          </div>
+          <div class="topbar-meta-item">
+            <span>Excel importado</span>
+            <strong>{{ excel_importado }}</strong>
+          </div>
+          {% if excel_sync_at %}
+          <div class="topbar-meta-item">
+            <span>Última sincronización automática</span>
+            <strong>{{ excel_sync_at }}</strong>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          <div class="flash-stack" role="status" aria-live="polite">
+            {% for m in messages %}
+              <div class="flash-message">{{ m }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
   </main>
 </div>
 {% else %}
 {% block auth %}{% endblock %}
 {% endif %}
+<script>
+document.addEventListener('click', function (event) {
+  const toggleButton = event.target.closest('[data-password-toggle]');
+  if (!toggleButton) return;
+  const wrapper = toggleButton.closest('.password-field');
+  if (!wrapper) return;
+  const targetInput = wrapper.querySelector('input');
+  if (!targetInput) return;
+  const isHidden = targetInput.type === 'password';
+  targetInput.type = isHidden ? 'text' : 'password';
+  toggleButton.textContent = isHidden ? 'Ocultar' : 'Mostrar';
+  toggleButton.setAttribute('aria-pressed', isHidden ? 'true' : 'false');
+});
+
+document.addEventListener('click', function (event) {
+  const sidebar = document.querySelector('[data-sidebar]');
+  const overlay = document.querySelector('[data-sidebar-overlay]');
+  if (!sidebar || !overlay) return;
+
+  if (event.target.closest('[data-sidebar-toggle]')) {
+    document.body.classList.toggle('sidebar-open');
+    return;
+  }
+
+  if (event.target === overlay) {
+    document.body.classList.remove('sidebar-open');
+  }
+});
+</script>
 </body>
 </html>
 

@@ -3,113 +3,123 @@
 <head>
   <meta charset="utf-8">
   <title>Detalle mensual por socio - {{ periodo }}</title>
-  <style>
-    body{font-family:Arial,sans-serif;margin:28px;color:#17263c}
-    h1,h2,h3,p{margin:0}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;border-bottom:2px solid #dbe4f0}
-    .brand{display:flex;gap:14px;align-items:flex-start}
-    .brand-logo{width:220px;max-width:100%;height:auto;display:block}
-    .brand-copy h1{font-size:22px;line-height:1.15;margin-bottom:6px}
-    .brand-copy .subtitle{font-size:14px;color:#58708c;margin-bottom:4px}
-    .brand-copy .location{font-size:13px;color:#6a8099}
-    .header-meta{text-align:right;min-width:220px}
-    .header-meta .doc-title{font-size:18px;font-weight:700;margin-bottom:8px}
-    .header-meta .meta-line{font-size:13px;color:#58708c;line-height:1.5}
-    .spacer{height:16px}
-    .meta{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
-    .box{border:1px solid #dbe4f0;border-radius:10px;padding:12px}
-    .note{margin:12px 0 18px;padding:12px 14px;border:1px solid #dbe4f0;border-radius:10px;background:#f8fbff}
-    .historico{border-color:#f2d178;background:#fff8dc}
-    table{width:100%;border-collapse:collapse;margin-top:14px}
-    th,td{border:1px solid #dbe4f0;padding:8px 10px;font-size:13px}
-    th{background:#f5f8fc}
-    tfoot td{font-weight:700;background:#f8fbff}
-    .text-right{text-align:right}
-    @media print{
-      body{margin:16px}
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/print_a4.css') }}">
 </head>
-<body>
-  <div class="header">
-    <div class="brand">
-      <img class="brand-logo" src="{{ url_for('static', filename='img/logo_jawilvio_light.svg') }}" alt="Logo JAWILVIO">
-      <div class="brand-copy">
-        <h1>{{ app_nombre }}</h1>
-        <div class="subtitle">Control financiero y recaudación mensual de la asociación</div>
-        <div class="location">{{ app_ubicacion }}</div>
+<body class="print-report">
+  <main class="print-page">
+    <header class="print-header">
+      <div class="print-brand">
+        <img class="print-brand-logo" src="{{ app_logo }}" alt="Logo institucional">
+        <div class="print-brand-copy">
+          <h1>{{ app_nombre }}</h1>
+          <div class="subtitle">Reporte institucional de recaudación mensual por socio.</div>
+          <div class="location">{{ app_ubicacion }}</div>
+        </div>
       </div>
+      <div class="print-meta">
+        <div class="print-doc-title">Detalle mensual por socio</div>
+        <div class="print-meta-line"><strong>Período:</strong> {{ periodo_label }}</div>
+        <div class="print-meta-line"><strong>Emitido:</strong> {{ fecha_emision }}</div>
+        <div class="print-meta-line"><strong>Documento:</strong> Aportaciones mensuales</div>
+      </div>
+    </header>
+
+    {% if es_periodo_historico_oficial %}
+    <div class="print-note historic">
+      <strong>Período histórico oficial.</strong>
+      {{ periodo_label }} se conserva como corte validado de la asociación y no se recalcula con la misma lógica operativa de los meses posteriores.
     </div>
-    <div class="header-meta">
-      <div class="doc-title">Detalle mensual por socio</div>
-      <div class="meta-line"><strong>Período:</strong> {{ periodo }}</div>
-      <div class="meta-line"><strong>Emitido:</strong> {{ fecha_emision }}</div>
-      <div class="meta-line"><strong>Documento:</strong> Aportaciones mensuales</div>
+    {% else %}
+    <div class="print-note">
+      El fondo del mes se calcula con las cuotas reales del período más los aportes mensuales registrados para la asociación.
     </div>
-  </div>
+    {% endif %}
 
-  <div class="spacer"></div>
+    <section class="print-section">
+      <h2 class="print-section-title">Resumen del período</h2>
+      <div class="print-summary-grid">
+        <div class="print-card">
+          <div class="print-card-title">Total de préstamos</div>
+          <div class="print-card-value">S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Total aportes</div>
+          <div class="print-card-value">S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Total mensual</div>
+          <div class="print-card-value">S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</div>
+        </div>
+        <div class="print-card">
+          <div class="print-card-title">Socios con aporte</div>
+          <div class="print-card-value">{{ resumen_aportaciones.socios_con_aporte }}</div>
+        </div>
+      </div>
+    </section>
 
-  {% if es_periodo_historico_oficial %}
-  <div class="note historico">
-    <strong>Período histórico oficial.</strong>
-    {{ periodo }} se conserva como corte validado de la asociación y no se recalcula con la misma lógica operativa de los meses posteriores.
-  </div>
-  {% else %}
-  <div class="note">
-    El fondo del mes se calcula con las cuotas reales del período + aportes mensuales.
-  </div>
-  {% endif %}
+    <section class="print-section">
+      <h2 class="print-section-title">Composición del total</h2>
+      <div class="print-band">
+        <div class="print-band-item">
+          <strong>Cuotas del mes</strong>
+          S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}
+        </div>
+        <div class="print-band-item">
+          <strong>Aportes fijos</strong>
+          S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}
+        </div>
+        <div class="print-band-item">
+          <strong>Total mensual</strong>
+          <span class="print-emphasis">S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</span>
+        </div>
+      </div>
+    </section>
 
-  <div class="meta">
-    <div class="box"><strong>Total de préstamos</strong><br>S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</div>
-    <div class="box"><strong>Total aportes</strong><br>S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</div>
-    <div class="box"><strong>Total mensual</strong><br>S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</div>
-    <div class="box"><strong>Socios con aporte</strong><br>{{ resumen_aportaciones.socios_con_aporte }}</div>
-  </div>
+    <section class="print-section">
+      <h2 class="print-section-title">Detalle mensual por socio</h2>
+      <div class="print-table-wrap">
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>N°</th>
+              <th>Apellidos y nombres</th>
+              <th>Cuotas</th>
+              <th>Fecha</th>
+              <th class="text-right">Cuota de préstamo</th>
+              <th class="text-right">Aportación</th>
+              <th class="text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in filas %}
+            <tr>
+              <td>{{ f.socio_numero }}</td>
+              <td>{{ f.socio_nombre }}</td>
+              <td>{{ f.cuotas or 0 }} cuotas</td>
+              <td>{{ f.fecha_prestamo or '-' }}</td>
+              <td class="text-right">S/ {{ '%.1f'|format(f.cuota_prestamo or 0) }}</td>
+              <td class="text-right">S/ {{ '%.1f'|format(f.aporte_mensual or 0) }}</td>
+              <td class="text-right">S/ {{ '%.1f'|format(f.total_mes or 0) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4">{{ periodo_label }} - Totales</td>
+              <td class="text-right">S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</td>
+              <td class="text-right">S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</td>
+              <td class="text-right">S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
 
-  <div class="note">
-    <strong>Fórmula del período:</strong>
-    Cuotas del mes <strong>S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</strong>
-    + aportes fijos <strong>S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</strong>
-    = total mensual <strong>S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</strong>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>N°</th>
-        <th>Apellidos y nombres</th>
-        <th>Cuotas</th>
-        <th>Fecha</th>
-        <th>Cuota de préstamo</th>
-        <th>Aportación</th>
-        <th>Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for f in filas %}
-      <tr>
-        <td>{{ f.socio_numero }}</td>
-        <td>{{ f.socio_nombre }}</td>
-        <td>{{ f.cuotas or 0 }} cuotas</td>
-        <td>{{ f.fecha_prestamo or '-' }}</td>
-        <td class="text-right">S/ {{ '%.1f'|format(f.cuota_prestamo or 0) }}</td>
-        <td class="text-right">S/ {{ '%.1f'|format(f.aporte_mensual or 0) }}</td>
-        <td class="text-right">S/ {{ '%.1f'|format(f.total_mes or 0) }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-    <tfoot>
-      <tr>
-        <td colspan="4">{{ periodo }} - TOTAL</td>
-        <td class="text-right">S/ {{ '%.1f'|format(cierre.total_prestamos or 0) }}</td>
-        <td class="text-right">S/ {{ '%.1f'|format(cierre.total_aportes or 0) }}</td>
-        <td class="text-right">S/ {{ '%.1f'|format(cierre.total_recaudado or 0) }}</td>
-      </tr>
-    </tfoot>
-  </table>
-
+    <footer class="print-footer">
+      <div>Documento generado desde el módulo de aportaciones mensuales.</div>
+      <div>Corte del período: {{ periodo_label }}</div>
+    </footer>
+  </main>
   <script>window.print()</script>
 </body>
 </html>

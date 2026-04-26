@@ -1,0 +1,271 @@
+@page {
+  size: A4;
+  margin: 14mm 12mm 14mm 12mm;
+}
+
+:root {
+  --print-bg: #ffffff;
+  --print-text: #17263c;
+  --print-muted: #58708c;
+  --print-line: #dbe4f0;
+  --print-soft: #f5f8fc;
+  --print-soft-2: #f8fbff;
+  --print-accent: #2e66c5;
+  --print-accent-soft: #eaf2ff;
+  --print-success-soft: #eef8ee;
+  --print-warning-soft: #fff8dc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--print-bg);
+  color: var(--print-text);
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body.print-report {
+  padding: 14mm 12mm;
+}
+
+.print-page {
+  width: 100%;
+}
+
+.print-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--print-line);
+}
+
+.print-brand {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.print-brand-logo {
+  width: 180px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.print-brand-copy h1 {
+  font-size: 22px;
+  line-height: 1.15;
+  margin: 0 0 6px;
+}
+
+.print-brand-copy .subtitle {
+  font-size: 13px;
+  color: var(--print-muted);
+  margin-bottom: 4px;
+}
+
+.print-brand-copy .location {
+  font-size: 12px;
+  color: var(--print-muted);
+}
+
+.print-meta {
+  min-width: 220px;
+  text-align: right;
+}
+
+.print-doc-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.print-meta-line {
+  font-size: 12px;
+  color: var(--print-muted);
+  line-height: 1.55;
+}
+
+.print-section {
+  margin-top: 16px;
+}
+
+.print-section-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--print-accent);
+}
+
+.print-note {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--print-line);
+  border-radius: 10px;
+  background: var(--print-soft-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.print-note.historic {
+  border-color: #f2d178;
+  background: var(--print-warning-soft);
+}
+
+.print-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.print-summary-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.print-summary-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.print-card {
+  border: 1px solid var(--print-line);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+}
+
+.print-card-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--print-muted);
+  margin-bottom: 6px;
+}
+
+.print-card-value {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.print-card-value.small {
+  font-size: 18px;
+}
+
+.print-card-subvalue {
+  font-size: 12px;
+  color: var(--print-muted);
+  margin-top: 5px;
+  line-height: 1.45;
+}
+
+.print-band {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.print-band-item {
+  border: 1px solid var(--print-line);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--print-soft);
+}
+
+.print-band-item strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.print-table-wrap {
+  margin-top: 14px;
+  border: 1px solid var(--print-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.print-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.print-table th,
+.print-table td {
+  border-bottom: 1px solid var(--print-line);
+  padding: 8px 10px;
+  font-size: 12px;
+  vertical-align: top;
+}
+
+.print-table thead th {
+  background: var(--print-soft);
+  color: var(--print-text);
+  font-weight: 700;
+}
+
+.print-table tfoot td {
+  background: var(--print-soft-2);
+  font-weight: 700;
+}
+
+.print-table tbody tr:last-child td,
+.print-table tfoot tr:last-child td {
+  border-bottom: none;
+}
+
+.print-table .text-right {
+  text-align: right;
+}
+
+.print-table .text-center {
+  text-align: center;
+}
+
+.print-table .muted {
+  color: var(--print-muted);
+}
+
+.print-table .closed-row td {
+  background: var(--print-success-soft);
+}
+
+.print-footer {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--print-line);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--print-muted);
+}
+
+.print-emphasis {
+  color: var(--print-accent);
+  font-weight: 700;
+}
+
+@media print {
+  body.print-report {
+    padding: 0;
+  }
+
+  .print-page {
+    page-break-after: auto;
+  }
+}

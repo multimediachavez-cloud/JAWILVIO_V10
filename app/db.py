@@ -4,6 +4,8 @@ import os, re, calendar
 import openpyxl
 from datetime import datetime, date
 
+from .utils.security import hash_password, is_password_hashed
+
 IMPORT_VERSION = 'v5_socios_dni_foto'
 
 SCHEMA = """
@@ -14,7 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL,
     estado TEXT NOT NULL DEFAULT 'Activo',
     creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
-    ultimo_acceso TEXT
+    ultimo_acceso TEXT,
+    two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+    two_factor_secret TEXT
 );
 CREATE TABLE IF NOT EXISTS socios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +58,25 @@ CREATE TABLE IF NOT EXISTS asistencia (
     estado TEXT,
     observacion TEXT
 );
+CREATE TABLE IF NOT EXISTS multas_asistencia (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    periodo TEXT NOT NULL,
+    socio_numero INTEGER NOT NULL,
+    socio_nombre TEXT NOT NULL,
+    inasistencias INTEGER NOT NULL DEFAULT 0,
+    tardanzas INTEGER NOT NULL DEFAULT 0,
+    monto_multa_inasistencia REAL NOT NULL DEFAULT 0,
+    monto_multa_tardanza REAL NOT NULL DEFAULT 0,
+    total_multa REAL NOT NULL DEFAULT 0,
+    estado_cobro TEXT NOT NULL DEFAULT 'Pendiente',
+    fecha_cobro TEXT,
+    observacion TEXT,
+    edicion_manual INTEGER NOT NULL DEFAULT 0,
+    oculto_manual INTEGER NOT NULL DEFAULT 0,
+    creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+    calculado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(periodo, socio_numero)
+);
 CREATE TABLE IF NOT EXISTS configuracion (
     clave TEXT PRIMARY KEY,
     valor TEXT
@@ -63,7 +86,16 @@ CREATE TABLE IF NOT EXISTS auditoria (
     fecha TEXT DEFAULT CURRENT_TIMESTAMP,
     usuario TEXT,
     accion TEXT,
-    detalle TEXT
+    detalle TEXT,
+    categoria TEXT DEFAULT 'usuario',
+    modulo TEXT,
+    entidad TEXT,
+    entidad_id TEXT,
+    periodo TEXT,
+    nivel TEXT DEFAULT 'INFO',
+    antes_json TEXT,
+    despues_json TEXT,
+    metadata_json TEXT
 );
 CREATE TABLE IF NOT EXISTS saldo_historico_mensual (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -335,6 +367,30 @@ def init_db(app):
             conn.execute('ALTER TABLE permisos_mensuales ADD COLUMN motivo TEXT')
         if 'documento' not in permisos_columns:
             conn.execute('ALTER TABLE permisos_mensuales ADD COLUMN documento TEXT')
+        multas_columns = {row['name'] for row in conn.execute("PRAGMA table_info(multas_asistencia)").fetchall()}
+        if 'edicion_manual' not in multas_columns:
+            conn.execute("ALTER TABLE multas_asistencia ADD COLUMN edicion_manual INTEGER NOT NULL DEFAULT 0")
+        if 'oculto_manual' not in multas_columns:
+            conn.execute("ALTER TABLE multas_asistencia ADD COLUMN oculto_manual INTEGER NOT NULL DEFAULT 0")
+        auditoria_columns = {row['name'] for row in conn.execute("PRAGMA table_info(auditoria)").fetchall()}
+        if 'categoria' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN categoria TEXT DEFAULT 'usuario'")
+        if 'modulo' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN modulo TEXT")
+        if 'entidad' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN entidad TEXT")
+        if 'entidad_id' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN entidad_id TEXT")
+        if 'periodo' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN periodo TEXT")
+        if 'nivel' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN nivel TEXT DEFAULT 'INFO'")
+        if 'antes_json' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN antes_json TEXT")
+        if 'despues_json' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN despues_json TEXT")
+        if 'metadata_json' not in auditoria_columns:
+            conn.execute("ALTER TABLE auditoria ADD COLUMN metadata_json TEXT")
         users_columns = {row['name'] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
         if 'estado' not in users_columns:
             conn.execute("ALTER TABLE users ADD COLUMN estado TEXT NOT NULL DEFAULT 'Activo'")
@@ -342,6 +398,10 @@ def init_db(app):
             conn.execute("ALTER TABLE users ADD COLUMN creado_en TEXT")
         if 'ultimo_acceso' not in users_columns:
             conn.execute("ALTER TABLE users ADD COLUMN ultimo_acceso TEXT")
+        if 'two_factor_enabled' not in users_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0")
+        if 'two_factor_secret' not in users_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN two_factor_secret TEXT")
         historial_excel_columns = {row['name'] for row in conn.execute("PRAGMA table_info(prestamos_excel_historial)").fetchall()}
         if 'titulo_manual' not in historial_excel_columns:
             conn.execute('ALTER TABLE prestamos_excel_historial ADD COLUMN titulo_manual TEXT')
@@ -356,19 +416,27 @@ def init_db(app):
         if 'fecha_fin_manual' not in historial_excel_columns:
             conn.execute('ALTER TABLE prestamos_excel_historial ADD COLUMN fecha_fin_manual TEXT')
         users = [
-            ('admin', 'admin123', 'Administrador'),
-            ('tesorero', 'tesorero123', 'Tesorero'),
-            ('secretario', 'secretario123', 'Secretario'),
-            ('consulta', 'consulta123', 'Consulta'),
+            ('admin', hash_password('admin123'), 'Administrador'),
+            ('tesorero', hash_password('tesorero123'), 'Tesorero'),
+            ('secretario', hash_password('secretario123'), 'Secretario'),
+            ('consulta', hash_password('consulta123'), 'Consulta'),
         ]
         for user in users:
             conn.execute('INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)', user)
         conn.execute("UPDATE users SET estado='Activo' WHERE estado IS NULL OR TRIM(estado)=''")
         conn.execute("UPDATE users SET creado_en=CURRENT_TIMESTAMP WHERE creado_en IS NULL OR TRIM(creado_en)=''")
+        legacy_users = conn.execute("SELECT id, password FROM users").fetchall()
+        for legacy_user in legacy_users:
+            if not is_password_hashed(legacy_user['password']):
+                conn.execute(
+                    "UPDATE users SET password=? WHERE id=?",
+                    (hash_password(legacy_user['password']), legacy_user['id']),
+                )
 
         config = {
             'nombre_asociacion': 'Asociación JAWILVIO',
             'ubicacion': 'Celendin, Cajamarca',
+            'logo_institucional': '',
             'aporte_mensual': '150',
             'saldo_actual_total_oficial': '887838.9',
             'acciones_por_socio_oficial': '29594.6',
@@ -905,8 +973,29 @@ def import_excel_if_needed(app):
                 (f'Registros: {balance_insertados} | Vinculados: {vinculados}',)
             )
         conn.execute(
-            'INSERT INTO auditoria(usuario, accion, detalle) VALUES(?,?,?)',
-            ('sistema', 'Importacion Excel', f'Socios {socios_insertados}, cuotas {cuotas_insertadas}, hojas {len(hojas)}, balance {balance_insertados}')
+            """
+            INSERT INTO auditoria(
+                usuario, accion, detalle, categoria, modulo, entidad, periodo, nivel, metadata_json
+            ) VALUES(?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                'sistema',
+                'Importacion Excel',
+                f'Socios {socios_insertados}, cuotas {cuotas_insertadas}, hojas {len(hojas)}, balance {balance_insertados}',
+                'sistema',
+                'importacion_excel',
+                'excel',
+                periodo_balance,
+                'INFO',
+                (
+                    '{'
+                    f'"socios": {int(socios_insertados)}, '
+                    f'"cuotas": {int(cuotas_insertadas)}, '
+                    f'"hojas": {int(len(hojas))}, '
+                    f'"balance": {int(balance_insertados)}'
+                    '}'
+                ),
+            )
         )
         conn.commit()
 
