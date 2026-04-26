@@ -339,6 +339,29 @@ MONTH_NAMES = {
 }
 
 
+def _env_flag(name, default=False):
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    return str(raw_value).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def get_bootstrap_users():
+    admin_password = os.environ.get('ADMIN_BOOTSTRAP_PASSWORD', 'admin123')
+    users = [
+        ('admin', hash_password(admin_password), 'Administrador'),
+    ]
+    if _env_flag('SEED_DEFAULT_USERS', default=True):
+        users.extend(
+            [
+                ('tesorero', hash_password(os.environ.get('TESORERO_BOOTSTRAP_PASSWORD', 'tesorero123')), 'Tesorero'),
+                ('secretario', hash_password(os.environ.get('SECRETARIO_BOOTSTRAP_PASSWORD', 'secretario123')), 'Secretario'),
+                ('consulta', hash_password(os.environ.get('CONSULTA_BOOTSTRAP_PASSWORD', 'consulta123')), 'Consulta'),
+            ]
+        )
+    return users
+
+
 def connect_db(app):
     conn = sqlite3.connect(app.config['DATABASE'])
     conn.row_factory = sqlite3.Row
@@ -415,12 +438,7 @@ def init_db(app):
             conn.execute('ALTER TABLE prestamos_excel_historial ADD COLUMN fecha_inicio_manual TEXT')
         if 'fecha_fin_manual' not in historial_excel_columns:
             conn.execute('ALTER TABLE prestamos_excel_historial ADD COLUMN fecha_fin_manual TEXT')
-        users = [
-            ('admin', hash_password('admin123'), 'Administrador'),
-            ('tesorero', hash_password('tesorero123'), 'Tesorero'),
-            ('secretario', hash_password('secretario123'), 'Secretario'),
-            ('consulta', hash_password('consulta123'), 'Consulta'),
-        ]
+        users = get_bootstrap_users()
         for user in users:
             conn.execute('INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)', user)
         conn.execute("UPDATE users SET estado='Activo' WHERE estado IS NULL OR TRIM(estado)=''")

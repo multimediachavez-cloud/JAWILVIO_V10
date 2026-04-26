@@ -7,7 +7,7 @@ import unicodedata
 from functools import wraps
 from datetime import datetime, date
 import calendar
-from flask import jsonify
+from flask import jsonify, send_from_directory, abort
 from .core.database import get_connection
 from .core.logging_config import log_financial_event, log_system_event, log_user_action_event
 from .db import import_excel_if_needed
@@ -17,6 +17,32 @@ from .utils.uploads import build_static_upload_url
 from .utils.validation import safe_float, safe_int
 
 bp = Blueprint('main', __name__)
+
+
+@bp.route('/health')
+def health():
+    return api_response(
+        {
+            'ok': True,
+            'status': 'healthy',
+            'app': 'JAWILVIO_V10',
+            'database_recovered': bool(current_app.config.get('DATABASE_RECOVERED')),
+        }
+    )
+
+
+@bp.route('/uploads/<path:asset_path>')
+def uploaded_asset(asset_path):
+    uploads_root = os.path.abspath(current_app.config.get('UPLOADS_ROOT') or '')
+    if not uploads_root:
+        abort(404)
+    normalized = asset_path.replace('\\', '/').lstrip('/')
+    full_path = os.path.abspath(os.path.join(uploads_root, normalized))
+    if not full_path.startswith(uploads_root + os.sep) and full_path != uploads_root:
+        abort(404)
+    if not os.path.exists(full_path):
+        abort(404)
+    return send_from_directory(uploads_root, normalized, conditional=True)
 
 REUNION_TIPOS_VIA = [
     ('Jr.', 'Jirón'),

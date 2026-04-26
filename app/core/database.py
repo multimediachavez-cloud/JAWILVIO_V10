@@ -1,5 +1,6 @@
 """Database bootstrap helpers shared across the Flask app."""
 
+import os
 import sqlite3
 from dataclasses import dataclass
 
@@ -16,8 +17,10 @@ class DatabaseSettings:
 
 def configure_database(app):
     """Centralize DB settings so the app can swap engines more easily later."""
-    app.config.setdefault('DB_ENGINE', 'sqlite')
-    app.config.setdefault('DATABASE_DSN', app.config.get('DATABASE', ''))
+    env_engine = (os.getenv('DB_ENGINE') or 'sqlite').strip().lower() or 'sqlite'
+    env_dsn = (os.getenv('DATABASE_DSN') or os.getenv('DATABASE_URL') or '').strip()
+    app.config.setdefault('DB_ENGINE', env_engine)
+    app.config.setdefault('DATABASE_DSN', env_dsn or app.config.get('DATABASE', ''))
 
 
 def get_database_settings(app=None) -> DatabaseSettings:

@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: jawilvio-v10
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 2 --threads 4 --timeout 120 wsgi:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        generateValue: true
+      - key: SEED_DEFAULT_USERS
+        value: "0"
+      - key: JAWILVIO_INSTANCE_PATH
+        value: /var/data
+      - key: JAWILVIO_UPLOADS_PATH
+        value: /var/data/uploads
+      - key: DATABASE_PATH
+        value: /var/data/jawilvio_v10.db
+      - key: EXCEL_PATH
+        value: /var/data/asociacion_jawilvio.xlsx
+    disk:
+      name: jawilvio-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -15,7 +15,14 @@ def build_static_upload_url(path):
         return None
     if path.startswith('http://') or path.startswith('https://') or path.startswith('/'):
         return path
-    return url_for('static', filename=path.replace('\\', '/'))
+    normalized = path.replace('\\', '/')
+    static_candidate = os.path.join(current_app.static_folder, normalized.replace('/', os.sep))
+    if os.path.exists(static_candidate):
+        return url_for('static', filename=normalized)
+    if normalized.startswith('uploads/'):
+        upload_subpath = normalized[len('uploads/'):]
+        return url_for('main.uploaded_asset', asset_path=upload_subpath)
+    return url_for('static', filename=normalized)
 
 
 def save_uploaded_file(file_storage, upload_dir, final_name, allowed_extensions):
@@ -66,7 +73,11 @@ def delete_local_upload(path):
         return
     if str(path).startswith('img/'):
         return
-    full_path = os.path.join(current_app.static_folder, path.replace('/', os.sep))
+    normalized = path.replace('\\', '/')
+    full_path = os.path.join(current_app.static_folder, normalized.replace('/', os.sep))
+    if not os.path.exists(full_path) and normalized.startswith('uploads/'):
+        uploads_root = current_app.config.get('UPLOADS_ROOT') or os.path.join(current_app.static_folder, 'uploads')
+        full_path = os.path.join(uploads_root, normalized[len('uploads/'):].replace('/', os.sep))
     if os.path.exists(full_path):
         try:
             os.remove(full_path)
